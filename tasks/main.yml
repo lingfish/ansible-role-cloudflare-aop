@@ -1,0 +1,108 @@
+---
+# tasks/main.yml - Main entry point for cloudflare_aop role
+#
+# Flow:
+# 1. Validate required variables
+# 2. Check current AOP status
+# 3. Check existing certificates
+# 4. Generate CA + leaf certificates (optional)
+# 5. Upload leaf certificate to Cloudflare (optional)
+# 6. Enable zone-level AOP (optional)
+# 7. Clean up old certificates (optional)
+# 8. Set return facts
+
+- name: Validate required variables
+  ansible.builtin.assert:
+    that:
+      - cloudflare_aop_zone_id | length > 0
+      - cloudflare_aop_api_token | length > 0
+    fail_msg: >-
+      Both cloudflare_aop_zone_id and cloudflare_aop_api_token must be set.
+      See defaults/main.yml for details.
+    success_msg: Required variables are set.
+  tags:
+    - cloudflare_aop
+
+- name: Ensure cert directory exists
+  ansible.builtin.file:
+    path: "{{ cloudflare_aop_cert_dir }}"
+    state: directory
+    mode: "0700"
+  when: cloudflare_aop_generate_cert | bool
+  tags:
+    - cloudflare_aop
+    - cloudflare_aop_generate
+
+- name: Check current AOP settings
+  ansible.builtin.uri:
+    url: "{{ cloudflare_aop_api_base }}{{ cloudflare_aop_settings_endpoint }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_aop_api_token }}"
+      Content-Type: "application/json"
+    status_code: 200
+  register: _aop_settings
+  changed_when: false
+  tags:
+    - cloudflare_aop
+
+- name: Set AOP status fact
+  ansible.builtin.set_fact:
+    _aop_enabled: "{{ _aop_settings.json.result.enabled }}"
+
+- name: List existing certificates
+  ansible.builtin.uri:
+    url: "{{ cloudflare_aop_api_base }}{{ cloudflare_aop_cert_endpoint }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_aop_api_token }}"
+      Content-Type: "application/json"
+    status_code: 200
+  register: _existing_certs
+  changed_when: false
+  tags:
+    - cloudflare_aop
+
+- name: Generate certificates
+  ansible.builtin.include_tasks: generate_cert.yml
+  when: cloudflare_aop_generate_cert | bool
+  tags:
+    - cloudflare_aop
+    - cloudflare_aop_generate
+
+- name: Upload certificate to Cloudflare
+  ansible.builtin.include_tasks: upload_cert.yml
+  when: cloudflare_aop_upload_cert | bool
+  tags:
+    - cloudflare_aop
+    - cloudflare_aop_upload
+
+- name: Enable zone-level AOP
+  ansible.builtin.include_tasks: enable_aop.yml
+  when: cloudflare_aop_enable | bool
+  tags:
+    - cloudflare_aop
+    - cloudflare_aop_enable
+
+- name: Clean up old certificates
+  ansible.builtin.include_tasks: cleanup.yml
+  when:
+    - cloudflare_aop_cleanup_old | bool
+    - _upload_result is defined
+    - _upload_result.json is defined
+  tags:
+    - cloudflare_aop
+    - cloudflare_aop_cleanup
+
+- name: Set role return facts
+  ansible.builtin.set_fact:
+    cloudflare_aop:
+      ca_cert_path: "{{ cloudflare_aop_cert_dir }}/ca.pem"
+      leaf_cert_path: "{{ cloudflare_aop_cert_dir }}/leaf.pem"
+      leaf_key_path: "{{ cloudflare_aop_cert_dir }}/leaf.key"
+      certificate_id: "{{ _upload_result.json.result.id | default('') }}"
+      status: "{{ _upload_result.json.result.status | default('unknown') }}"
+      enabled: "{{ _aop_enabled }}"
+      expires_on: "{{ _upload_result.json.result.expires_on | default('unknown') }}"
+  tags:
+    - cloudflare_aop

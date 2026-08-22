@@ -1,0 +1,18 @@
+---
+name: Lint configuration
+extends: default
+
+rules:
+  line-length:
+    max: 200
+    level: warning
+  truthy:
+    level: warning
+  comments:
+    min-spaces-from-content: 1
+  braces:
+    max-spaces-inside: 1
+  indentation:
+    spaces: 2
+    indent-sequences: whatever
+  document-start: disable

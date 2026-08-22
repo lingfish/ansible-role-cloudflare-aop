@@ -1,0 +1,16 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+  vars:
+    # Use fake values for CI testing - the role should validate but
+    # the API calls will fail (which is expected in CI)
+    cloudflare_aop_zone_id: "test_zone_id_12345"
+    cloudflare_aop_api_token: "test_token_abcde"
+    cloudflare_aop_generate_cert: true
+    cloudflare_aop_upload_cert: false
+    cloudflare_aop_enable: false
+    cloudflare_aop_cleanup_old: false
+
+  roles:
+    - role: cloudflare_aop

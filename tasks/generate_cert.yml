@@ -1,0 +1,111 @@
+---
+# tasks/generate_cert.yml - Generate CA and leaf certificates
+#
+# Creates a self-signed CA certificate and a leaf certificate signed by that CA.
+# The leaf certificate is what gets uploaded to Cloudflare for AOP.
+# The CA certificate is what you install on your origin server.
+
+- name: Check if CA certificate already exists
+  ansible.builtin.stat:
+    path: "{{ cloudflare_aop_cert_dir }}/ca.pem"
+  register: _ca_cert
+
+- name: Check if leaf certificate already exists
+  ansible.builtin.stat:
+    path: "{{ cloudflare_aop_cert_dir }}/leaf.pem"
+  register: _leaf_cert
+
+- name: Generate CA private key (RSA)
+  community.crypto.openssl_privatekey:
+    path: "{{ cloudflare_aop_cert_dir }}/ca.key"
+    type: RSA
+    size: "{{ cloudflare_aop_key_size }}"
+    mode: "0600"
+  when:
+    - not _ca_cert.stat.exists
+    - cloudflare_aop_key_type == "rsa"
+
+- name: Generate CA private key (ECC)
+  community.crypto.openssl_privatekey:
+    path: "{{ cloudflare_aop_cert_dir }}/ca.key"
+    type: ECC
+    curve: "{{ cloudflare_aop_ecc_curve }}"
+    mode: "0600"
+  when:
+    - not _ca_cert.stat.exists
+    - cloudflare_aop_key_type == "ecc"
+
+- name: Generate CA CSR
+  community.crypto.openssl_csr_pipe:
+    privatekey_path: "{{ cloudflare_aop_cert_dir }}/ca.key"
+    common_name: "{{ cloudflare_aop_ca_common_name }}"
+    use_common_name_for_san: false
+    basic_constraints:
+      - "CA:TRUE"
+    basic_constraints_critical: true
+    key_usage:
+      - keyCertSign
+    key_usage_critical: true
+  register: _ca_csr
+  when: not _ca_cert.stat.exists
+
+- name: Self-sign CA certificate
+  community.crypto.x509_certificate:
+    path: "{{ cloudflare_aop_cert_dir }}/ca.pem"
+    csr_content: "{{ _ca_csr.csr }}"
+    privatekey_path: "{{ cloudflare_aop_cert_dir }}/ca.key"
+    provider: selfsigned
+    selfsigned_not_after: "+{{ cloudflare_aop_ca_validity }}d"
+  when: not _ca_cert.stat.exists
+
+- name: Generate leaf private key (RSA)
+  community.crypto.openssl_privatekey:
+    path: "{{ cloudflare_aop_cert_dir }}/leaf.key"
+    type: RSA
+    size: "{{ cloudflare_aop_key_size }}"
+    mode: "0600"
+  when:
+    - not _leaf_cert.stat.exists
+    - cloudflare_aop_key_type == "rsa"
+
+- name: Generate leaf private key (ECC)
+  community.crypto.openssl_privatekey:
+    path: "{{ cloudflare_aop_cert_dir }}/leaf.key"
+    type: ECC
+    curve: "{{ cloudflare_aop_ecc_curve }}"
+    mode: "0600"
+  when:
+    - not _leaf_cert.stat.exists
+    - cloudflare_aop_key_type == "ecc"
+
+- name: Generate leaf CSR
+  community.crypto.openssl_csr_pipe:
+    privatekey_path: "{{ cloudflare_aop_cert_dir }}/leaf.key"
+    common_name: "{{ cloudflare_aop_leaf_common_name }}"
+  register: _leaf_csr
+  when: not _leaf_cert.stat.exists
+
+- name: Sign leaf certificate with CA
+  community.crypto.x509_certificate:
+    path: "{{ cloudflare_aop_cert_dir }}/leaf.pem"
+    csr_content: "{{ _leaf_csr.csr }}"
+    provider: ownca
+    ownca_path: "{{ cloudflare_aop_cert_dir }}/ca.pem"
+    ownca_privatekey_path: "{{ cloudflare_aop_cert_dir }}/ca.key"
+    ownca_not_after: "+{{ cloudflare_aop_leaf_validity }}d"
+  when: not _leaf_cert.stat.exists
+
+- name: Read leaf certificate for upload
+  ansible.builtin.slurp:
+    src: "{{ cloudflare_aop_cert_dir }}/leaf.pem"
+  register: _leaf_cert_content
+
+- name: Read leaf private key for upload
+  ansible.builtin.slurp:
+    src: "{{ cloudflare_aop_cert_dir }}/leaf.key"
+  register: _leaf_key_content
+
+- name: Set certificate content facts
+  ansible.builtin.set_fact:
+    _leaf_cert_pem: "{{ _leaf_cert_content.content | b64decode }}"
+    _leaf_key_pem: "{{ _leaf_key_content.content | b64decode }}"

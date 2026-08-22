@@ -1,0 +1,6 @@
+---
+# Internal constants - do not override these
+
+cloudflare_aop_api_base: "https://api.cloudflare.com/client/v4"
+cloudflare_aop_cert_endpoint: "/zones/{{ cloudflare_aop_zone_id }}/origin_tls_client_auth"
+cloudflare_aop_settings_endpoint: "/zones/{{ cloudflare_aop_zone_id }}/origin_tls_client_auth/settings"

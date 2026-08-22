@@ -1,0 +1,72 @@
+---
+# cloudflare_aop - Ansible role for Cloudflare Authenticated Origin Pulls (zone-level)
+#
+# This role generates client certificates, uploads them to Cloudflare,
+# and enables zone-level Authenticated Origin Pulls.
+
+# =============================================================================
+# Required variables
+# =============================================================================
+
+# Cloudflare zone ID (found on the Zone > Overview page)
+# cloudflare_aop_zone_id: ""
+
+# Cloudflare API token with "SSL and Certificates Write" permission
+# cloudflare_aop_api_token: ""
+
+# =============================================================================
+# Certificate generation
+# =============================================================================
+
+# Directory to store generated CA and leaf certificates
+cloudflare_aop_cert_dir: /etc/cloudflare/aop
+
+# Common name for the CA root certificate
+cloudflare_aop_ca_common_name: "Cloudflare AOP CA"
+
+# Common name for the leaf (client) certificate
+# Defaults to the zone ID; override if you want a more readable name
+cloudflare_aop_leaf_common_name: "{{ cloudflare_aop_zone_id }}"
+
+# Key type: "rsa" or "ecc"
+cloudflare_aop_key_type: rsa
+
+# RSA key size in bits (ignored when key_type is ecc)
+cloudflare_aop_key_size: 4096
+
+# ECC curve name (only used when key_type is ecc)
+cloudflare_aop_ecc_curve: secp256r1
+
+# CA certificate validity in days (default: 1826 = 5 years)
+cloudflare_aop_ca_validity: 1826
+
+# Leaf certificate validity in days (default: 365 = 1 year)
+cloudflare_aop_leaf_validity: 365
+
+# =============================================================================
+# Control flags
+# =============================================================================
+
+# Generate CA + leaf certificates (set to false if you bring your own)
+cloudflare_aop_generate_cert: true
+
+# Upload leaf certificate to Cloudflare
+cloudflare_aop_upload_cert: true
+
+# Enable zone-level AOP after upload
+cloudflare_aop_enable: true
+
+# Delete old/expired certificates after successful upload
+# WARNING: Only enable this after confirming the new cert works on your origin
+cloudflare_aop_cleanup_old: false
+
+# =============================================================================
+# Origin server configuration (informational, not managed by this role)
+# =============================================================================
+
+# After this role runs, you need to configure your origin to:
+# 1. Install the CA cert at {{ cloudflare_aop_cert_dir }}/ca.pem
+# 2. Configure your web server to require and verify client certificates
+# 3. Enforce validation (e.g., nginx: ssl_verify_client on)
+#
+# See README.md for nginx/Apache examples.

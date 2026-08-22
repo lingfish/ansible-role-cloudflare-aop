@@ -1,0 +1,7 @@
+---
+skip_list:
+  - yaml[line-length]
+
+warn_list:
+  - role-name
+  - meta-role

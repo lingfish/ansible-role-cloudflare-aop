@@ -1,0 +1,64 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  tasks:
+    - name: Check CA certificate exists
+      ansible.builtin.stat:
+        path: /etc/cloudflare/aop/ca.pem
+      register: ca_cert
+
+    - name: Assert CA certificate exists
+      ansible.builtin.assert:
+        that:
+          - ca_cert.stat.exists
+          - ca_cert.stat.size > 0
+        fail_msg: CA certificate not found or empty
+
+    - name: Check leaf certificate exists
+      ansible.builtin.stat:
+        path: /etc/cloudflare/aop/leaf.pem
+      register: leaf_cert
+
+    - name: Assert leaf certificate exists
+      ansible.builtin.assert:
+        that:
+          - leaf_cert.stat.exists
+          - leaf_cert.stat.size > 0
+        fail_msg: Leaf certificate not found or empty
+
+    - name: Check leaf private key exists
+      ansible.builtin.stat:
+        path: /etc/cloudflare/aop/leaf.key
+      register: leaf_key
+
+    - name: Assert leaf private key exists
+      ansible.builtin.assert:
+        that:
+          - leaf_key.stat.exists
+          - leaf_key.stat.size > 0
+        fail_msg: Leaf private key not found or empty
+
+    - name: Verify CA certificate properties
+      community.crypto.x509_certificate_info:
+        path: /etc/cloudflare/aop/ca.pem
+      register: ca_info
+
+    - name: Assert CA certificate is self-signed
+      ansible.builtin.assert:
+        that:
+          - ca_info.subject.commonName == "Cloudflare AOP CA"
+          - ca_info.basic_constraints | select("match", "CA:TRUE") | list | length > 0
+        fail_msg: CA certificate has unexpected properties
+
+    - name: Verify leaf certificate properties
+      community.crypto.x509_certificate_info:
+        path: /etc/cloudflare/aop/leaf.pem
+      register: leaf_info
+
+    - name: Assert leaf certificate properties
+      ansible.builtin.assert:
+        that:
+          - leaf_info.subject.commonName == "test_zone_id_12345"
+          - leaf_info.basic_constraints | select("match", "CA:FALSE") | list | length > 0
+        fail_msg: Leaf certificate has unexpected properties

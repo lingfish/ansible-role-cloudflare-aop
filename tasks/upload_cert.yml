@@ -1,0 +1,69 @@
+---
+# tasks/upload_cert.yml - Upload leaf certificate to Cloudflare
+#
+# Uploads the leaf certificate and private key to Cloudflare for use
+# with zone-level Authenticated Origin Pulls.
+
+- name: Check for existing matching certificate
+  ansible.builtin.uri:
+    url: "{{ cloudflare_aop_api_base }}{{ cloudflare_aop_cert_endpoint }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_aop_api_token }}"
+      Content-Type: "application/json"
+    status_code: 200
+  register: _cert_list
+  changed_when: false
+
+- name: Upload certificate to Cloudflare
+  ansible.builtin.uri:
+    url: "{{ cloudflare_aop_api_base }}{{ cloudflare_aop_cert_endpoint }}"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ cloudflare_aop_api_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      certificate: "{{ _leaf_cert_pem }}"
+      private_key: "{{ _leaf_key_pem }}"
+    status_code: 200
+  register: _upload_result
+  when: _leaf_cert_pem is defined
+
+- name: Fail if upload failed
+  ansible.builtin.fail:
+    msg: >-
+      Certificate upload failed.
+      API response: {{ _upload_result.json.errors | default('unknown error') }}
+  when:
+    - _upload_result is defined
+    - _upload_result is changed
+    - _upload_result.json.success | default(true) == false
+
+- name: Wait for certificate to become active
+  ansible.builtin.uri:
+    url: >-
+      {{ cloudflare_aop_api_base }}{{ cloudflare_aop_cert_endpoint }}/{{ _upload_result.json.result.id }}
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_aop_api_token }}"
+      Content-Type: "application/json"
+    status_code: 200
+  register: _cert_status
+  changed_when: false
+  until: _cert_status.json.result.status == "active"
+  retries: 30
+  delay: 10
+  when:
+    - _upload_result is defined
+    - _upload_result is changed
+    - _upload_result.json.result is defined
+
+- name: Certificate uploaded successfully
+  ansible.builtin.debug:
+    msg: >-
+      Certificate {{ _upload_result.json.result.id }} uploaded and
+      status: {{ _cert_status.json.result.status | default('pending') }}
+  when:
+    - _upload_result is defined
+    - _upload_result is changed

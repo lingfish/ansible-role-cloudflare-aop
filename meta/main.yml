@@ -1,0 +1,100 @@
+---
+galaxy_info:
+  role_name: cloudflare_aop
+  author: Jason
+  description: >-
+    Manage Cloudflare Authenticated Origin Pulls (AOP) at the zone level.
+    Generates client certificates, uploads them to Cloudflare, and enables AOP.
+  license: MIT
+  min_ansible_version: "2.15"
+
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+    - name: EL
+      versions:
+        - "9"
+        - "10"
+
+  galaxy_tags:
+    - cloudflare
+    - ssl
+    - tls
+    - security
+    - origin
+    - aop
+    - mtls
+    - certificate
+
+  dependencies:
+    - community.crypto: ">=2.0.0"
+
+  doc_fragements:
+    - cloudflare_aop
+
+argument_specs:
+  main:
+    short_description: Main entry point for the cloudflare_aop role
+    options:
+      cloudflare_aop_zone_id:
+        description: Cloudflare zone ID
+        type: str
+        required: true
+      cloudflare_aop_api_token:
+        description: Cloudflare API token with "SSL and Certificates Write" permission
+        type: str
+        required: true
+        no_log: true
+      cloudflare_aop_cert_dir:
+        description: Directory to store generated certificates
+        type: str
+        default: /etc/cloudflare/aop
+      cloudflare_aop_ca_common_name:
+        description: Common name for the CA root certificate
+        type: str
+        default: "Cloudflare AOP CA"
+      cloudflare_aop_leaf_common_name:
+        description: Common name for the leaf (client) certificate
+        type: str
+        default: "{{ cloudflare_aop_zone_id }}"
+      cloudflare_aop_key_type:
+        description: Key type (rsa or ecc)
+        type: str
+        choices:
+          - rsa
+          - ecc
+        default: rsa
+      cloudflare_aop_key_size:
+        description: RSA key size in bits (ignored for ecc)
+        type: int
+        default: 4096
+      cloudflare_aop_ecc_curve:
+        description: ECC curve name (only used when key_type is ecc)
+        type: str
+        default: secp256r1
+      cloudflare_aop_ca_validity:
+        description: CA certificate validity in days
+        type: int
+        default: 1826
+      cloudflare_aop_leaf_validity:
+        description: Leaf certificate validity in days
+        type: int
+        default: 365
+      cloudflare_aop_generate_cert:
+        description: Generate CA + leaf certificates
+        type: bool
+        default: true
+      cloudflare_aop_upload_cert:
+        description: Upload leaf certificate to Cloudflare
+        type: bool
+        default: true
+      cloudflare_aop_enable:
+        description: Enable zone-level AOP after upload
+        type: bool
+        default: true
+      cloudflare_aop_cleanup_old:
+        description: Delete old certificates after successful upload
+        type: bool
+        default: false
