@@ -4,7 +4,7 @@
   tasks:
     - name: Check CA certificate exists
       ansible.builtin.stat:
-        path: /etc/cloudflare/aop/ca.pem
+        path: /etc/cloudflare/aop/test_zone_id_12345/ca.pem
       register: ca_cert
 
     - name: Assert CA certificate exists
@@ -16,7 +16,7 @@
 
     - name: Check leaf certificate exists
       ansible.builtin.stat:
-        path: /etc/cloudflare/aop/leaf.pem
+        path: /etc/cloudflare/aop/test_zone_id_12345/leaf.pem
       register: leaf_cert
 
     - name: Assert leaf certificate exists
@@ -28,7 +28,7 @@
 
     - name: Check leaf private key exists
       ansible.builtin.stat:
-        path: /etc/cloudflare/aop/leaf.key
+        path: /etc/cloudflare/aop/test_zone_id_12345/leaf.key
       register: leaf_key
 
     - name: Assert leaf private key exists
@@ -40,7 +40,7 @@
 
     - name: Verify CA certificate properties
       community.crypto.x509_certificate_info:
-        path: /etc/cloudflare/aop/ca.pem
+        path: /etc/cloudflare/aop/test_zone_id_12345/ca.pem
       register: ca_info
 
     - name: Assert CA certificate is self-signed
@@ -52,7 +52,7 @@
 
     - name: Verify leaf certificate properties
       community.crypto.x509_certificate_info:
-        path: /etc/cloudflare/aop/leaf.pem
+        path: /etc/cloudflare/aop/test_zone_id_12345/leaf.pem
       register: leaf_info
 
     - name: Assert leaf certificate properties
