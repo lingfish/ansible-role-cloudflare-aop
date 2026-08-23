@@ -1,6 +1,7 @@
 ---
 galaxy_info:
   role_name: cloudflare_aop
+  namespace: lingfish
   author: Jason
   description: >-
     Manage Cloudflare Authenticated Origin Pulls (AOP) at the zone level.
