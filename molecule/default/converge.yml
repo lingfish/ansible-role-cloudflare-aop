@@ -1,7 +1,6 @@
 ---
 - name: Converge
   hosts: all
-  become: true
   vars:
     # Use fake values for CI testing - the role should validate but
     # the API calls will fail (which is expected in CI)
