@@ -3,13 +3,12 @@
 #
 # Flow:
 # 1. Validate required variables
-# 2. Check current AOP status
-# 3. Check existing certificates
-# 4. Generate CA + leaf certificates (optional)
-# 5. Upload leaf certificate to Cloudflare (optional)
-# 6. Enable zone-level AOP (optional)
-# 7. Clean up old certificates (optional)
-# 8. Set return facts
+# 2. Check current AOP status (if enabling)
+# 3. Generate CA + leaf certificates (optional)
+# 4. Upload leaf certificate to Cloudflare (optional)
+# 5. Enable zone-level AOP (optional)
+# 6. Clean up old certificates (optional)
+# 7. Set return facts
 
 - name: Validate required variables
   ansible.builtin.assert:
@@ -43,25 +42,15 @@
     status_code: 200
   register: _aop_settings
   changed_when: false
+  when:
+    - cloudflare_aop_upload_cert | bool or cloudflare_aop_enable | bool
   tags:
     - cloudflare_aop
 
 - name: Set AOP status fact
   ansible.builtin.set_fact:
-    _aop_enabled: "{{ _aop_settings.json.result.enabled }}"
-
-- name: List existing certificates
-  ansible.builtin.uri:
-    url: "{{ cloudflare_aop_api_base }}{{ cloudflare_aop_cert_endpoint }}"
-    method: GET
-    headers:
-      Authorization: "Bearer {{ cloudflare_aop_api_token }}"
-      Content-Type: "application/json"
-    status_code: 200
-  register: _existing_certs
-  changed_when: false
-  tags:
-    - cloudflare_aop
+    _aop_enabled: "{{ _aop_settings.json.result.enabled | default(false) }}"
+  when: _aop_settings is defined and _aop_settings is not changed
 
 - name: Generate certificates
   ansible.builtin.include_tasks: generate_cert.yml
@@ -79,7 +68,9 @@
 
 - name: Enable zone-level AOP
   ansible.builtin.include_tasks: enable_aop.yml
-  when: cloudflare_aop_enable | bool
+  when:
+    - cloudflare_aop_enable | bool
+    - not (_aop_enabled | default(false) | bool)
   tags:
     - cloudflare_aop
     - cloudflare_aop_enable
@@ -102,7 +93,7 @@
       leaf_key_path: "{{ cloudflare_aop_cert_dir }}/leaf.key"
       certificate_id: "{{ _upload_result.json.result.id | default('') }}"
       status: "{{ _upload_result.json.result.status | default('unknown') }}"
-      enabled: "{{ _aop_enabled }}"
+      enabled: "{{ _aop_enabled | default(false) }}"
       expires_on: "{{ _upload_result.json.result.expires_on | default('unknown') }}"
   tags:
     - cloudflare_aop
