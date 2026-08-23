@@ -12,5 +12,7 @@
     cloudflare_aop_enable: false
     cloudflare_aop_cleanup_old: false
 
-  roles:
-    - role: cloudflare_aop
+  tasks:
+    - name: Run cloudflare_aop role
+      ansible.builtin.include_role:
+        name: cloudflare_aop

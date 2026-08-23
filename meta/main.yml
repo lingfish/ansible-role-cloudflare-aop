@@ -28,11 +28,7 @@ galaxy_info:
     - mtls
     - certificate
 
-  dependencies:
-    - community.crypto: ">=2.0.0"
-
-  doc_fragements:
-    - cloudflare_aop
+dependencies: []
 
 argument_specs:
   main:

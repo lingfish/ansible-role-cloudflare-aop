@@ -38,7 +38,7 @@
   when:
     - _upload_result is defined
     - _upload_result is changed
-    - _upload_result.json.success | default(true) == false
+    - not (_upload_result.json.success | default(true) | bool)
 
 - name: Wait for certificate to become active
   ansible.builtin.uri:

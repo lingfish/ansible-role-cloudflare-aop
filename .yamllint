@@ -1,5 +1,4 @@
 ---
-name: Lint configuration
 extends: default
 
 rules:
@@ -16,3 +15,7 @@ rules:
     spaces: 2
     indent-sequences: whatever
   document-start: disable
+  comments-indentation: false
+  octal-values:
+    forbid-implicit-octal: true
+    forbid-explicit-octal: true
