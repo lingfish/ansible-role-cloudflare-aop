@@ -3,8 +3,9 @@
 #
 # Uploads the leaf certificate and private key to Cloudflare for use
 # with zone-level Authenticated Origin Pulls.
+# Handles the case where the certificate already exists.
 
-- name: Check for existing matching certificate
+- name: List existing certificates
   ansible.builtin.uri:
     url: "{{ cloudflare_aop_api_base }}{{ cloudflare_aop_cert_endpoint }}"
     method: GET
@@ -14,6 +15,20 @@
     status_code: [200, 202]
   register: _cert_list
   changed_when: false
+
+- name: Read leaf certificate serial number
+  community.crypto.x509_certificate_info:
+    content: "{{ _leaf_cert_pem }}"
+  register: _leaf_cert_info
+  when: _leaf_cert_pem is defined
+
+- name: Find existing certificate with matching serial
+  ansible.builtin.set_fact:
+    _existing_cert: >-
+      {{ _cert_list.json.result | default([]) | selectattr('serial_number', 'equalto', _leaf_cert_info.subject.serialNumber | default('')) | first | default({}) }}
+  when:
+    - _leaf_cert_pem is defined
+    - _leaf_cert_info.subject is defined
 
 - name: Upload certificate to Cloudflare
   ansible.builtin.uri:
@@ -26,19 +41,48 @@
     body:
       certificate: "{{ _leaf_cert_pem }}"
       private_key: "{{ _leaf_key_pem }}"
-    status_code: [200, 201, 202]
+    status_code: [200, 201, 202, 400]
   register: _upload_result
-  when: _leaf_cert_pem is defined
+  when:
+    - _leaf_cert_pem is defined
+    - _existing_cert.id is not defined
 
-- name: Fail if upload failed
+- name: Set cert ID from existing certificate
+  ansible.builtin.set_fact:
+    _upload_result:
+      json:
+        result:
+          id: "{{ _existing_cert.id }}"
+          status: "active"
+      success: true
+  when:
+    - _existing_cert is defined
+    - _existing_cert.id is defined
+
+- name: Fail if upload failed with unexpected error
   ansible.builtin.fail:
     msg: >-
       Certificate upload failed.
       API response: {{ _upload_result.json.errors | default('unknown error') }}
   when:
     - _upload_result is defined
-    - _upload_result is changed
-    - not (_upload_result.json.success | default(true) | bool)
+    - _upload_result.status | default(200) == 400
+    - _upload_result.json.errors | default([]) | selectattr('code', 'equalto', 1406) | list | length == 0
+
+- name: Handle already exists error - find existing cert
+  when:
+    - _upload_result is defined
+    - _upload_result.status | default(200) == 400
+    - _upload_result.json.errors | default([]) | selectattr('code', 'equalto', 1406) | list | length > 0
+  block:
+    - name: Find existing cert after already-exists error
+      ansible.builtin.set_fact:
+        _upload_result:
+          json:
+            result:
+              id: "{{ _cert_list.json.result | first | default({}).id | default('') }}"
+              status: "active"
+          success: true
 
 - name: Wait for certificate to become active
   ansible.builtin.uri:
@@ -56,14 +100,11 @@
   delay: 10
   when:
     - _upload_result is defined
-    - _upload_result is changed
     - _upload_result.json.result is defined
+    - _upload_result.json.result.id | length > 0
 
-- name: Certificate uploaded successfully
+- name: Certificate ready
   ansible.builtin.debug:
     msg: >-
-      Certificate {{ _upload_result.json.result.id }} uploaded and
-      status: {{ _cert_status.json.result.status | default('pending') }}
-  when:
-    - _upload_result is defined
-    - _upload_result is changed
+      Certificate {{ _upload_result.json.result.id }}
+      (status: {{ _cert_status.json.result.status | default(_upload_result.json.result.status | default('unknown')) }})
