@@ -1,13 +1,14 @@
 ---
 # tasks/generate_cert.yml - Generate CA and leaf certificates
 #
-# Creates a self-signed CA certificate and a leaf certificate signed by that CA.
+# Creates a shared self-signed CA certificate (at the base cert dir)
+# and a per-zone leaf certificate signed by that CA.
 # The leaf certificate is what gets uploaded to Cloudflare for AOP.
 # The CA certificate is what you install on your origin server.
 
 - name: Check if CA certificate already exists
   ansible.builtin.stat:
-    path: "{{ cloudflare_aop_zone_cert_dir }}/ca.pem"
+    path: "{{ cloudflare_aop_ca_cert_path }}"
   register: _ca_cert
 
 - name: Check if leaf certificate already exists
@@ -17,7 +18,7 @@
 
 - name: Generate CA private key (RSA)
   community.crypto.openssl_privatekey:
-    path: "{{ cloudflare_aop_zone_cert_dir }}/ca.key"
+    path: "{{ cloudflare_aop_ca_key_path }}"
     type: RSA
     size: "{{ cloudflare_aop_key_size }}"
     mode: "0600"
@@ -27,7 +28,7 @@
 
 - name: Generate CA private key (ECC)
   community.crypto.openssl_privatekey:
-    path: "{{ cloudflare_aop_zone_cert_dir }}/ca.key"
+    path: "{{ cloudflare_aop_ca_key_path }}"
     type: ECC
     curve: "{{ cloudflare_aop_ecc_curve }}"
     mode: "0600"
@@ -37,7 +38,7 @@
 
 - name: Generate CA CSR
   community.crypto.openssl_csr_pipe:
-    privatekey_path: "{{ cloudflare_aop_zone_cert_dir }}/ca.key"
+    privatekey_path: "{{ cloudflare_aop_ca_key_path }}"
     common_name: "{{ cloudflare_aop_ca_common_name }}"
     use_common_name_for_san: false
     basic_constraints:
@@ -51,9 +52,9 @@
 
 - name: Self-sign CA certificate
   community.crypto.x509_certificate:
-    path: "{{ cloudflare_aop_zone_cert_dir }}/ca.pem"
+    path: "{{ cloudflare_aop_ca_cert_path }}"
     csr_content: "{{ _ca_csr.csr }}"
-    privatekey_path: "{{ cloudflare_aop_zone_cert_dir }}/ca.key"
+    privatekey_path: "{{ cloudflare_aop_ca_key_path }}"
     provider: selfsigned
     selfsigned_not_after: "+{{ cloudflare_aop_ca_validity }}d"
   when: not _ca_cert.stat.exists
@@ -90,8 +91,8 @@
     path: "{{ cloudflare_aop_zone_cert_dir }}/leaf.pem"
     csr_content: "{{ _leaf_csr.csr }}"
     provider: ownca
-    ownca_path: "{{ cloudflare_aop_zone_cert_dir }}/ca.pem"
-    ownca_privatekey_path: "{{ cloudflare_aop_zone_cert_dir }}/ca.key"
+    ownca_path: "{{ cloudflare_aop_ca_cert_path }}"
+    ownca_privatekey_path: "{{ cloudflare_aop_ca_key_path }}"
     ownca_not_after: "+{{ cloudflare_aop_leaf_validity }}d"
   when: not _leaf_cert.stat.exists
 

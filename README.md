@@ -99,7 +99,7 @@ Your origin server configuration (nginx, Apache, etc.) is **not** managed by thi
 
 ### Multiple Zones
 
-Each zone gets its own certificate directory under `cloudflare_aop_cert_dir/<zone_id>/`:
+All zones share one CA certificate. Each zone gets its own leaf certificate:
 
 ```yaml
 - hosts: localhost
@@ -122,17 +122,17 @@ Each zone gets its own certificate directory under `cloudflare_aop_cert_dir/<zon
 Certificate layout:
 ```
 /etc/cloudflare/aop/
+├── ca.pem          ← Shared CA (same for all zones)
+├── ca.key
 ├── zone_id_1/
-│   ├── ca.pem
-│   ├── ca.key
-│   ├── leaf.pem
+│   ├── leaf.pem    ← Leaf cert uploaded to zone 1
 │   └── leaf.key
 └── zone_id_2/
-    ├── ca.pem
-    ├── ca.key
-    ├── leaf.pem
+    ├── leaf.pem    ← Leaf cert uploaded to zone 2
     └── leaf.key
 ```
+
+Install the shared CA once on your origin server — it validates leaf certs for all zones.
 
 ## Return Values
 
@@ -140,7 +140,7 @@ After running, the role sets `ansible_facts.cloudflare_aop`:
 
 ```yaml
 cloudflare_aop:
-  ca_cert_path: /etc/cloudflare/aop/<zone_id>/ca.pem
+  ca_cert_path: /etc/cloudflare/aop/ca.pem
   leaf_cert_path: /etc/cloudflare/aop/<zone_id>/leaf.pem
   leaf_key_path: /etc/cloudflare/aop/<zone_id>/leaf.key
   certificate_id: "abc123..."
