@@ -14,4 +14,4 @@
   tasks:
     - name: Run cloudflare_aop role
       ansible.builtin.include_role:
-        name: cloudflare_aop
+        name: lingfish.cloudflare_aop
