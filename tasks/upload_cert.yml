@@ -77,10 +77,14 @@
   block:
     - name: Find existing cert after already-exists error
       ansible.builtin.set_fact:
+        _existing_cert_id: "{{ (_cert_list.json.result | first).id | default('') }}"
+
+    - name: Set upload result from existing cert
+      ansible.builtin.set_fact:
         _upload_result:
           json:
             result:
-              id: "{{ _cert_list.json.result | first | default({}).id | default('') }}"
+              id: "{{ _existing_cert_id }}"
               status: "active"
           success: true
 
