@@ -30,7 +30,7 @@ Your origin server configuration (nginx, Apache, etc.) is **not** managed by thi
 
 | Variable | Default | Description |
 |---|---|---|
-| `cloudflare_aop_cert_dir` | `/etc/cloudflare/aop` | Directory for generated certificates |
+| `cloudflare_aop_cert_dir` | `/etc/cloudflare/aop` | Base directory for certificates (per-zone subdirectory created automatically) |
 | `cloudflare_aop_ca_common_name` | `Cloudflare AOP CA` | CA certificate common name |
 | `cloudflare_aop_leaf_common_name` | `{{ cloudflare_aop_zone_id }}` | Leaf certificate common name |
 | `cloudflare_aop_key_type` | `rsa` | Key type: `rsa` or `ecc` |
@@ -97,15 +97,52 @@ Your origin server configuration (nginx, Apache, etc.) is **not** managed by thi
         cloudflare_aop_cleanup_old: true
 ```
 
+### Multiple Zones
+
+Each zone gets its own certificate directory under `cloudflare_aop_cert_dir/<zone_id>/`:
+
+```yaml
+- hosts: localhost
+  tasks:
+    - name: Setup AOP for zone 1
+      ansible.builtin.include_role:
+        name: lingfish.cloudflare_aop
+      vars:
+        cloudflare_aop_zone_id: "zone_id_1"
+        cloudflare_aop_api_token: "your_api_token"
+
+    - name: Setup AOP for zone 2
+      ansible.builtin.include_role:
+        name: lingfish.cloudflare_aop
+      vars:
+        cloudflare_aop_zone_id: "zone_id_2"
+        cloudflare_aop_api_token: "your_api_token"
+```
+
+Certificate layout:
+```
+/etc/cloudflare/aop/
+├── zone_id_1/
+│   ├── ca.pem
+│   ├── ca.key
+│   ├── leaf.pem
+│   └── leaf.key
+└── zone_id_2/
+    ├── ca.pem
+    ├── ca.key
+    ├── leaf.pem
+    └── leaf.key
+```
+
 ## Return Values
 
 After running, the role sets `ansible_facts.cloudflare_aop`:
 
 ```yaml
 cloudflare_aop:
-  ca_cert_path: /etc/cloudflare/aop/ca.pem
-  leaf_cert_path: /etc/cloudflare/aop/leaf.pem
-  leaf_key_path: /etc/cloudflare/aop/leaf.key
+  ca_cert_path: /etc/cloudflare/aop/<zone_id>/ca.pem
+  leaf_cert_path: /etc/cloudflare/aop/<zone_id>/leaf.pem
+  leaf_key_path: /etc/cloudflare/aop/<zone_id>/leaf.key
   certificate_id: "abc123..."
   status: "active"
   enabled: true

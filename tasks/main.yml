@@ -24,7 +24,7 @@
 
 - name: Ensure cert directory exists
   ansible.builtin.file:
-    path: "{{ cloudflare_aop_cert_dir }}"
+    path: "{{ cloudflare_aop_zone_cert_dir }}"
     state: directory
     mode: "0700"
   when: cloudflare_aop_generate_cert | bool
@@ -88,9 +88,9 @@
 - name: Set role return facts
   ansible.builtin.set_fact:
     cloudflare_aop:
-      ca_cert_path: "{{ cloudflare_aop_cert_dir }}/ca.pem"
-      leaf_cert_path: "{{ cloudflare_aop_cert_dir }}/leaf.pem"
-      leaf_key_path: "{{ cloudflare_aop_cert_dir }}/leaf.key"
+      ca_cert_path: "{{ cloudflare_aop_zone_cert_dir }}/ca.pem"
+      leaf_cert_path: "{{ cloudflare_aop_zone_cert_dir }}/leaf.pem"
+      leaf_key_path: "{{ cloudflare_aop_zone_cert_dir }}/leaf.key"
       certificate_id: "{{ _upload_result.json.result.id | default('') }}"
       status: "{{ _upload_result.json.result.status | default('unknown') }}"
       enabled: "{{ _aop_enabled | default(false) }}"
