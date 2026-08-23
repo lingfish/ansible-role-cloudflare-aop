@@ -13,7 +13,7 @@
     body_format: json
     body:
       enabled: true
-    status_code: 200
+    status_code: [200, 202]
   register: _enable_result
   when: not _aop_enabled | bool
 
@@ -24,7 +24,7 @@
     headers:
       Authorization: "Bearer {{ cloudflare_aop_api_token }}"
       Content-Type: "application/json"
-    status_code: 200
+    status_code: [200, 202]
   register: _verify_settings
   changed_when: false
 

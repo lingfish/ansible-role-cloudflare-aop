@@ -11,7 +11,7 @@
     headers:
       Authorization: "Bearer {{ cloudflare_aop_api_token }}"
       Content-Type: "application/json"
-    status_code: 200
+    status_code: [200, 202]
   register: _cert_list
   changed_when: false
 
@@ -26,7 +26,7 @@
     body:
       certificate: "{{ _leaf_cert_pem }}"
       private_key: "{{ _leaf_key_pem }}"
-    status_code: 200
+    status_code: [200, 202]
   register: _upload_result
   when: _leaf_cert_pem is defined
 
@@ -48,7 +48,7 @@
     headers:
       Authorization: "Bearer {{ cloudflare_aop_api_token }}"
       Content-Type: "application/json"
-    status_code: 200
+    status_code: [200, 202]
   register: _cert_status
   changed_when: false
   until: _cert_status.json.result.status == "active"
