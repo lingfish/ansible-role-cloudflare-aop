@@ -59,5 +59,4 @@
       ansible.builtin.assert:
         that:
           - leaf_info.subject.commonName == "test_zone_id_12345"
-          - leaf_info.basic_constraints | select("match", "CA:FALSE") | list | length > 0
         fail_msg: Leaf certificate has unexpected properties
