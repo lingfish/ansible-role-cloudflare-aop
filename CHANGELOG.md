@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-25
+
 ### Added
 
 - Initial role implementation
@@ -15,4 +17,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Zone-level AOP enablement
 - Optional old certificate cleanup
 - Molecule test scenario
-- CI/CD with GitHub Actions (lint, molecule, Galaxy publish)
+- CI/CD with GitHub Actions (lint, molecule)
