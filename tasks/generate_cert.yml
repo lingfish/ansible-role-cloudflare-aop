@@ -22,6 +22,11 @@
     path: "{{ cloudflare_aop_ca_key_path }}"
   register: _ca_key
 
+- name: Check if CA CSR already exists
+  ansible.builtin.stat:
+    path: "{{ cloudflare_aop_ca_csr_path }}"
+  register: _ca_csr_file
+
 - name: Check if leaf certificate already exists
   ansible.builtin.stat:
     path: "{{ cloudflare_aop_zone_cert_dir }}/leaf.pem"
@@ -31,6 +36,11 @@
   ansible.builtin.stat:
     path: "{{ cloudflare_aop_zone_cert_dir }}/leaf.key"
   register: _leaf_key
+
+- name: Check if leaf CSR already exists
+  ansible.builtin.stat:
+    path: "{{ cloudflare_aop_zone_cert_dir }}/leaf.csr"
+  register: _leaf_csr_file
 
 # ── Check expiry via valid_at (only when cert exists) ────────────────
 
@@ -91,7 +101,8 @@
 # ── CA cert ──────────────────────────────────────────────────────────
 
 - name: Generate CA CSR
-  community.crypto.openssl_csr_pipe:
+  community.crypto.openssl_csr:
+    path: "{{ cloudflare_aop_ca_csr_path }}"
     privatekey_path: "{{ cloudflare_aop_ca_key_path }}"
     common_name: "{{ cloudflare_aop_ca_common_name }}"
     use_common_name_for_san: false
@@ -101,17 +112,23 @@
     key_usage:
       - keyCertSign
     key_usage_critical: true
-  register: _ca_csr
-  when: _ca_needs_renew | bool
+    force: "{{ _ca_csr_file.stat.exists and _ca_needs_renew | bool }}"
+    mode: "0644"
+  when:
+    - not _ca_csr_file.stat.exists or (_ca_needs_renew | bool and _ca_csr_file.stat.exists)
+
+- name: Read CA CSR content
+  ansible.builtin.slurp:
+    src: "{{ cloudflare_aop_ca_csr_path }}"
+  register: _ca_csr_content
 
 - name: Self-sign CA certificate
   community.crypto.x509_certificate:
     path: "{{ cloudflare_aop_ca_cert_path }}"
-    csr_content: "{{ _ca_csr.csr }}"
+    csr_content: "{{ _ca_csr_content.content | b64decode }}"
     privatekey_path: "{{ cloudflare_aop_ca_key_path }}"
     provider: selfsigned
     selfsigned_not_after: "+{{ cloudflare_aop_ca_validity }}d"
-    force: "{{ _ca_cert.stat.exists }}"
   when: _ca_needs_renew | bool
 
 # ── Leaf key ─────────────────────────────────────────────────────────
@@ -141,21 +158,28 @@
 # ── Leaf cert ────────────────────────────────────────────────────────
 
 - name: Generate leaf CSR
-  community.crypto.openssl_csr_pipe:
+  community.crypto.openssl_csr:
+    path: "{{ cloudflare_aop_zone_cert_dir }}/leaf.csr"
     privatekey_path: "{{ cloudflare_aop_zone_cert_dir }}/leaf.key"
     common_name: "{{ cloudflare_aop_leaf_common_name }}"
-  register: _leaf_csr
-  when: _leaf_needs_renew | bool
+    force: "{{ _leaf_csr_file.stat.exists and _leaf_needs_renew | bool }}"
+    mode: "0644"
+  when:
+    - not _leaf_csr_file.stat.exists or (_leaf_needs_renew | bool and _leaf_csr_file.stat.exists)
+
+- name: Read leaf CSR content
+  ansible.builtin.slurp:
+    src: "{{ cloudflare_aop_zone_cert_dir }}/leaf.csr"
+  register: _leaf_csr_content
 
 - name: Sign leaf certificate with CA
   community.crypto.x509_certificate:
     path: "{{ cloudflare_aop_zone_cert_dir }}/leaf.pem"
-    csr_content: "{{ _leaf_csr.csr }}"
+    csr_content: "{{ _leaf_csr_content.content | b64decode }}"
     provider: ownca
     ownca_path: "{{ cloudflare_aop_ca_cert_path }}"
     ownca_privatekey_path: "{{ cloudflare_aop_ca_key_path }}"
     ownca_not_after: "+{{ cloudflare_aop_leaf_validity }}d"
-    force: "{{ _leaf_cert.stat.exists }}"
   when: _leaf_needs_renew | bool
 
 # ── Read cert content for upload ─────────────────────────────────────
