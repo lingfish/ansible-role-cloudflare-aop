@@ -103,7 +103,20 @@ Your origin server configuration (nginx, Apache, etc.) is **not** managed by thi
 
 ### Multiple Zones
 
-When run against a single host, all zones share one CA certificate. Each zone gets its own leaf certificate. Use `include_role` with a loop to manage multiple zones:
+When run against a single host, all zones share one CA certificate. Each zone gets its own leaf certificate.
+
+Define your zones in `host_vars` or `group_vars` (keeps secrets out of playbooks):
+
+```yaml
+# host_vars/localhost.yml
+cloudflare_aop_zones:
+  - zone_id: "zone_id_1"
+    api_token: "your_api_token"
+  - zone_id: "zone_id_2"
+    api_token: "your_api_token"
+```
+
+Then loop over them in your playbook:
 
 ```yaml
 tasks:
@@ -118,9 +131,7 @@ tasks:
     vars:
       cloudflare_aop_zone_id: "{{ item.zone_id }}"
       cloudflare_aop_api_token: "{{ item.api_token }}"
-    loop:
-      - { zone_id: "zone_id_1", api_token: "your_api_token" }
-      - { zone_id: "zone_id_2", api_token: "your_api_token" }
+    loop: "{{ cloudflare_aop_zones }}"
     loop_control:
       label: "{{ item.zone_id }}"
 ```
