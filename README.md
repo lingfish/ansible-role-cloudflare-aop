@@ -103,25 +103,30 @@ Your origin server configuration (nginx, Apache, etc.) is **not** managed by thi
 
 ### Multiple Zones
 
-When run against a single host, all zones share one CA certificate. Each zone gets its own leaf certificate:
+When run against a single host, all zones share one CA certificate. Each zone gets its own leaf certificate. Use `include_role` with a loop to manage multiple zones:
 
 ```yaml
 - hosts: localhost
   tasks:
-    - name: Setup AOP for zone 1
+    - name: Setup AOP for all zones
       ansible.builtin.include_role:
         name: lingfish.cloudflare_aop
+        apply:
+          tags:
+            - cloudflare_aop
+      tags:
+        - always
       vars:
-        cloudflare_aop_zone_id: "zone_id_1"
-        cloudflare_aop_api_token: "your_api_token"
-
-    - name: Setup AOP for zone 2
-      ansible.builtin.include_role:
-        name: lingfish.cloudflare_aop
-      vars:
-        cloudflare_aop_zone_id: "zone_id_2"
-        cloudflare_aop_api_token: "your_api_token"
+        cloudflare_aop_zone_id: "{{ item.zone_id }}"
+        cloudflare_aop_api_token: "{{ item.api_token }}"
+      loop:
+        - { zone_id: "zone_id_1", api_token: "your_api_token" }
+        - { zone_id: "zone_id_2", api_token: "your_api_token" }
+      loop_control:
+        label: "{{ item.zone_id }}"
 ```
+
+> **Why `include_role` instead of `import_role`?** `import_role` does not support loops, and its static variable scoping causes `set_fact` values (like zone names) to bleed between invocations. `include_role` with `apply: { tags: [...] }` provides proper variable scoping per loop iteration while preserving tag inheritance.
 
 Certificate layout (all on one host):
 ```
