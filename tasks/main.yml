@@ -3,12 +3,13 @@
 #
 # Flow:
 # 1. Validate required variables
-# 2. Check current AOP status (if enabling)
-# 3. Generate CA + leaf certificates (optional)
-# 4. Upload leaf certificate to Cloudflare (optional)
-# 5. Enable zone-level AOP (optional)
-# 6. Clean up old certificates (optional)
-# 7. Set return facts
+# 2. Fetch zone name from Cloudflare API
+# 3. Check current AOP status (if enabling)
+# 4. Generate CA + leaf certificates (optional)
+# 5. Upload leaf certificate to Cloudflare (optional)
+# 6. Enable zone-level AOP (optional)
+# 7. Clean up old certificates (optional)
+# 8. Read CA cert info + set return facts
 
 - name: Validate required variables
   ansible.builtin.assert:
@@ -21,6 +22,27 @@
     success_msg: Required variables are set.
   tags:
     - cloudflare_aop
+
+- name: Fetch zone name from Cloudflare API
+  ansible.builtin.uri:
+    url: "{{ cloudflare_aop_api_base }}{{ cloudflare_aop_zone_endpoint }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_aop_api_token }}"
+      Content-Type: "application/json"
+    status_code: [200]
+  register: _zone_info
+  changed_when: false
+  failed_when: false
+  when: cloudflare_aop_zone_name | default('') | length == 0
+  tags:
+    - cloudflare_aop
+
+- name: Set zone name fact
+  ansible.builtin.set_fact:
+    cloudflare_aop_zone_name: >-
+      {{ _zone_info.json.result.name | default(cloudflare_aop_zone_id) }}
+  when: cloudflare_aop_zone_name | default('') | length == 0
 
 - name: Ensure base cert directory exists
   ansible.builtin.file:
@@ -95,10 +117,21 @@
     - cloudflare_aop
     - cloudflare_aop_cleanup
 
+- name: Read CA certificate info
+  community.crypto.x509_certificate_info:
+    path: "{{ cloudflare_aop_ca_cert_path }}"
+  register: _ca_cert_info
+  when: cloudflare_aop_generate_cert | bool
+  tags:
+    - cloudflare_aop
+
 - name: Set role return facts
   ansible.builtin.set_fact:
     cloudflare_aop:
+      zone_name: "{{ cloudflare_aop_zone_name }}"
       ca_cert_path: "{{ cloudflare_aop_ca_cert_path }}"
+      ca_serial_number: "{{ _ca_cert_info.serial_number | default('') }}"
+      ca_fingerprint: "{{ _ca_cert_info.fingerprints.sha256 | default('') }}"
       leaf_cert_path: "{{ cloudflare_aop_zone_cert_dir }}/leaf.pem"
       leaf_key_path: "{{ cloudflare_aop_zone_cert_dir }}/leaf.key"
       certificate_id: "{{ _upload_result.json.result.id | default('') }}"

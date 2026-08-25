@@ -14,6 +14,10 @@
 # Cloudflare API token with "SSL and Certificates Write" permission
 # cloudflare_aop_api_token: ""
 
+# Optional: override the zone name (fetched from API by default)
+# Used for the per-zone certificate subdirectory name
+# cloudflare_aop_zone_name: ""
+
 # =============================================================================
 # Certificate generation
 # =============================================================================

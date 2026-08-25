@@ -33,6 +33,7 @@ Your origin server configuration (nginx, Apache, etc.) is **not** managed by thi
 | Variable | Default | Description |
 |---|---|---|
 | `cloudflare_aop_cert_dir` | `/etc/cloudflare/aop` | Base directory for certificates (per-zone subdirectory created automatically) |
+| `cloudflare_aop_zone_name` | *(fetched from API)* | Override the zone name used for the per-zone subdirectory (defaults to zone name from Cloudflare API) |
 | `cloudflare_aop_ca_common_name` | `Cloudflare AOP CA` | CA certificate common name |
 | `cloudflare_aop_leaf_common_name` | `{{ cloudflare_aop_zone_id }}` | Leaf certificate common name |
 | `cloudflare_aop_key_type` | `rsa` | Key type: `rsa` or `ecc` |
@@ -84,8 +85,8 @@ Your origin server configuration (nginx, Apache, etc.) is **not** managed by thi
         cloudflare_aop_zone_id: "your_zone_id"
         cloudflare_aop_api_token: "your_api_token"
         cloudflare_aop_generate_cert: false
-        # Place your cert at <cloudflare_aop_cert_dir>/leaf.pem
-        # Place your key at <cloudflare_aop_cert_dir>/leaf.key
+        # Place your cert at <cloudflare_aop_cert_dir>/<zone_name>/leaf.pem
+        # Place your key at <cloudflare_aop_cert_dir>/<zone_name>/leaf.key
 ```
 
 ### With Cleanup (Rotate Old Certs)
@@ -125,13 +126,13 @@ When run against a single host, all zones share one CA certificate. Each zone ge
 Certificate layout (all on one host):
 ```
 /etc/cloudflare/aop/
-├── ca.pem          ← Shared CA (same for all zones)
+├── ca.pem                ← Shared CA (same for all zones)
 ├── ca.key
-├── zone_id_1/
-│   ├── leaf.pem    ← Leaf cert uploaded to zone 1
+├── example.com/
+│   ├── leaf.pem          ← Leaf cert uploaded to zone 1
 │   └── leaf.key
-└── zone_id_2/
-    ├── leaf.pem    ← Leaf cert uploaded to zone 2
+└── example.org/
+    ├── leaf.pem          ← Leaf cert uploaded to zone 2
     └── leaf.key
 ```
 
@@ -172,13 +173,26 @@ After running, the role sets `ansible_facts.cloudflare_aop`:
 
 ```yaml
 cloudflare_aop:
+  zone_name: example.com
   ca_cert_path: /etc/cloudflare/aop/ca.pem
-  leaf_cert_path: /etc/cloudflare/aop/<zone_id>/leaf.pem
-  leaf_key_path: /etc/cloudflare/aop/<zone_id>/leaf.key
+  ca_serial_number: "1234567890ABCDEF1234"
+  ca_fingerprint: "AA:BB:CC:DD:EE:FF:..."
+  leaf_cert_path: /etc/cloudflare/aop/example.com/leaf.pem
+  leaf_key_path: /etc/cloudflare/aop/example.com/leaf.key
   certificate_id: "abc123..."
   status: "active"
   enabled: true
   expires_on: "2027-08-22T00:00:00Z"
+```
+
+Use `ca_serial_number` or `ca_fingerprint` to cross-reference with the certificate issuer shown in the Cloudflare dashboard:
+
+```yaml
+- name: Verify CA matches Cloudflare dashboard
+  ansible.builtin.debug:
+    msg: >-
+      CA on origin: {{ cloudflare_aop.ca_fingerprint }}
+      Install at: {{ cloudflare_aop.ca_cert_path }}
 ```
 
 Access these in subsequent tasks:
@@ -201,9 +215,9 @@ Access these in subsequent tasks:
 │  4. Enable zone-level AOP                            │
 │                                                      │
 │  Output:                                             │
-│    /etc/cloudflare/aop/ca.pem    (install on origin) │
-│    /etc/cloudflare/aop/leaf.pem  (uploaded to CF)    │
-│    /etc/cloudflare/aop/leaf.key  (uploaded to CF)    │
+│    /etc/cloudflare/aop/ca.pem         (install on origin) │
+│    /etc/cloudflare/aop/<zone>/leaf.pem   (uploaded to CF) │
+│    /etc/cloudflare/aop/<zone>/leaf.key   (uploaded to CF) │
 └───────────────────────────────────────────────────────┘
          │
          │  Upload leaf cert
