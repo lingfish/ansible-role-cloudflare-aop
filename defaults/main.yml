@@ -43,6 +43,9 @@ cloudflare_aop_ca_validity: 1826
 # Leaf certificate validity in days (default: 365 = 1 year)
 cloudflare_aop_leaf_validity: 365
 
+# Renew certificates when within this many days of expiry (0 = only generate if missing)
+cloudflare_aop_renew_days: 30
+
 # =============================================================================
 # Control flags
 # =============================================================================

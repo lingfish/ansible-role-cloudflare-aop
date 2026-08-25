@@ -3,10 +3,12 @@
 Ansible role for managing [Cloudflare Authenticated Origin Pulls (AOP)](https://developers.cloudflare.com/ssl/origin-configuration/authenticated-origin-pull/) at the zone level.
 
 This role handles the Cloudflare side of AOP:
-- Generates a CA root certificate and leaf client certificate
+- Generates a CA root certificate and leaf client certificate on the **target host**
 - Uploads the leaf certificate to Cloudflare
 - Enables zone-level AOP
 - Optionally cleans up old certificates
+
+> **Note:** Certificates are generated directly on the target host (not the Ansible controller). For most setups, run this role against `localhost` and distribute the CA cert to your origin servers manually.
 
 Your origin server configuration (nginx, Apache, etc.) is **not** managed by this role — see [Origin Server Configuration](#origin-server-configuration) for examples.
 
@@ -38,6 +40,7 @@ Your origin server configuration (nginx, Apache, etc.) is **not** managed by thi
 | `cloudflare_aop_ecc_curve` | `secp256r1` | ECC curve (only for ecc key type) |
 | `cloudflare_aop_ca_validity` | `1826` (5 years) | CA certificate validity in days |
 | `cloudflare_aop_leaf_validity` | `365` (1 year) | Leaf certificate validity in days |
+| `cloudflare_aop_renew_days` | `30` | Renew certificates when within this many days of expiry (0 = only if missing) |
 | `cloudflare_aop_generate_cert` | `true` | Generate CA + leaf certificates |
 | `cloudflare_aop_upload_cert` | `true` | Upload leaf certificate to Cloudflare |
 | `cloudflare_aop_enable` | `true` | Enable zone-level AOP |
@@ -99,7 +102,7 @@ Your origin server configuration (nginx, Apache, etc.) is **not** managed by thi
 
 ### Multiple Zones
 
-All zones share one CA certificate. Each zone gets its own leaf certificate:
+When run against a single host, all zones share one CA certificate. Each zone gets its own leaf certificate:
 
 ```yaml
 - hosts: localhost
@@ -119,7 +122,7 @@ All zones share one CA certificate. Each zone gets its own leaf certificate:
         cloudflare_aop_api_token: "your_api_token"
 ```
 
-Certificate layout:
+Certificate layout (all on one host):
 ```
 /etc/cloudflare/aop/
 ├── ca.pem          ← Shared CA (same for all zones)
@@ -132,7 +135,36 @@ Certificate layout:
     └── leaf.key
 ```
 
-Install the shared CA once on your origin server — it validates leaf certs for all zones.
+Install the CA cert on your origin server — it validates leaf certs for all zones served by that host.
+
+### Multiple Origin Servers
+
+Certificates are generated on the target host. If you run the role against multiple hosts, each host generates its own independent CA — the CAs are **not** shared.
+
+For multiple origin servers behind the same Cloudflare zones, run the role against `localhost` and distribute the CA cert:
+
+```yaml
+- hosts: localhost
+  roles:
+    - role: lingfish.cloudflare_aop
+      vars:
+        cloudflare_aop_zone_id: "your_zone_id"
+        cloudflare_aop_api_token: "your_api_token"
+```
+
+Then copy the CA cert to each origin server (e.g., via `ansible.builtin.copy` or `ansible.builtin.synchronize`):
+
+```yaml
+- hosts: origin_servers
+  tasks:
+    - name: Install AOP CA cert
+      ansible.builtin.copy:
+        src: /etc/cloudflare/aop/ca.pem
+        dest: /etc/cloudflare/aop/ca.pem
+        mode: "0644"
+```
+
+All origins will validate the same leaf cert that Cloudflare presents, since they share the same CA.
 
 ## Return Values
 
@@ -161,7 +193,7 @@ Access these in subsequent tasks:
 
 ```
 ┌───────────────────────────────────────────────────────┐
-│                    Ansible Host                      │
+│              Target Host (typically localhost)         │
 │                                                      │
 │  1. Generate CA cert (self-signed)                   │
 │  2. Generate leaf cert (signed by CA)                │
@@ -240,11 +272,29 @@ frontend https_in
 
 ## Certificate Renewal
 
-When your leaf certificate approaches expiration:
+The role checks certificate expiry on every run. If a certificate exists but is within `cloudflare_aop_renew_days` of expiry (default: 30), it is regenerated and re-uploaded automatically.
 
-1. Re-run the role with the same variables — it will generate new certs and upload
-2. Verify the new cert is active on your origin
-3. Set `cloudflare_aop_cleanup_old: true` to remove the old cert from Cloudflare
+Set `cloudflare_aop_renew_days: 0` to disable automatic renewal — the role will only generate certs if they are missing.
+
+### Cron Example
+
+Run the role daily to auto-renew before expiry:
+
+```cron
+0 3 * * * ansible-playbook -i inventory aop.yml
+```
+
+### Manual Renewal
+
+To force immediate renewal, delete the existing cert files and re-run the role, or lower `cloudflare_aop_renew_days` temporarily:
+
+```yaml
+- role: lingfish.cloudflare_aop
+  vars:
+    cloudflare_aop_zone_id: "your_zone_id"
+    cloudflare_aop_api_token: "your_api_token"
+    cloudflare_aop_renew_days: 9999  # force renewal on next run
+```
 
 **Zero-downtime rotation:** Cloudflare keeps the old cert active until the new one is deployed. Both certs may show as `active` briefly during the transition.
 
