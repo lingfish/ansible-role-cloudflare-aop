@@ -160,7 +160,7 @@ Access these in subsequent tasks:
 ## How It Works
 
 ```
-┌─────────────────────────────────────────────────────┐
+┌───────────────────────────────────────────────────────┐
 │                    Ansible Host                      │
 │                                                      │
 │  1. Generate CA cert (self-signed)                   │
@@ -172,17 +172,17 @@ Access these in subsequent tasks:
 │    /etc/cloudflare/aop/ca.pem    (install on origin) │
 │    /etc/cloudflare/aop/leaf.pem  (uploaded to CF)    │
 │    /etc/cloudflare/aop/leaf.key  (uploaded to CF)    │
-└─────────────────────────────────────────────────────┘
+└───────────────────────────────────────────────────────┘
          │
          │  Upload leaf cert
          ▼
-┌─────────────────────────────────────────────────────┐
+┌───────────────────────────────────────────────────────┐
 │               Cloudflare Edge                        │
 │                                                      │
 │  • Presents leaf cert during TLS handshake           │
 │  • Origin verifies cert against CA                   │
 │  • Rejects connections without valid client cert     │
-└─────────────────────────────────────────────────────┘
+└───────────────────────────────────────────────────────┘
 ```
 
 ## Origin Server Configuration
