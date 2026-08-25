@@ -46,6 +46,7 @@
   when:
     - _leaf_cert_pem is defined
     - _existing_cert.id is not defined
+  notify: "cloudflare_aop cloudflare changed"
 
 - name: Set cert ID from existing certificate
   ansible.builtin.set_fact:

@@ -130,6 +130,7 @@
     provider: selfsigned
     selfsigned_not_after: "+{{ cloudflare_aop_ca_validity }}d"
   when: _ca_needs_renew | bool
+  notify: "cloudflare_aop ca changed"
 
 # ── Leaf key ─────────────────────────────────────────────────────────
 

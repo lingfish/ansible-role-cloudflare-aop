@@ -299,6 +299,40 @@ frontend https_in
     bind *:443 ssl ca-file /etc/cloudflare/aop/ca.pem verify required
 ```
 
+## Handlers
+
+This role does not define handlers — it emits `notify` topics that your playbook can subscribe to with `listen`. This keeps the role decoupled from your web server choice.
+
+| Topic | Fires when | Use for |
+|---|---|---|
+| `cloudflare_aop ca changed` | `ca.pem` is created or renewed (`tasks/generate_cert.yml:125`) | Reload/restart origin (Apache, nginx, HAProxy) |
+| `cloudflare_aop cloudflare changed` | Leaf uploaded (`tasks/upload_cert.yml:33`) or AOP enabled (`tasks/enable_aop.yml:6`) | Audit, cache purge, notifications |
+
+Both are no-ops if no handler subscribes. Handlers dedupe to one run per play even when looping over multiple zones (`README.md:124`).
+
+```yaml
+- hosts: webservers
+  tasks:
+    - ansible.builtin.include_role:
+        name: lingfish.cloudflare_aop
+      vars:
+        cloudflare_aop_zone_id: "your_zone_id"
+        cloudflare_aop_api_token: "your_api_token"
+  handlers:
+    - name: Reload Apache
+      ansible.builtin.service:
+        name: apache2
+        state: reloaded
+      listen: "cloudflare_aop ca changed"
+
+    - name: Audit Cloudflare change
+      ansible.builtin.debug:
+        msg: "Leaf uploaded / AOP enabled for {{ cloudflare_aop.zone_name }}"
+      listen: "cloudflare_aop cloudflare changed"
+```
+
+See [Handlers: running operations on change](https://docs.ansible.com/projects/ansible/latest/playbook_guide/playbooks_handlers.html) and `Handlers in roles` (`role_name : handler_name` with `listen` for decoupling).
+
 ## Certificate Renewal
 
 The role checks certificate expiry on every run. If a certificate exists but is within `cloudflare_aop_renew_days` of expiry (default: 30), it is regenerated and re-uploaded automatically.
