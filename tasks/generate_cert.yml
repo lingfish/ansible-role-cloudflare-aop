@@ -32,32 +32,22 @@
     path: "{{ cloudflare_aop_zone_cert_dir }}/leaf.key"
   register: _leaf_key
 
-# ── Read cert expiry (only when cert exists) ─────────────────────────
+# ── Check expiry via valid_at (only when cert exists) ────────────────
 
-- name: Read CA certificate info
+- name: Check CA certificate expiry
   community.crypto.x509_certificate_info:
     path: "{{ cloudflare_aop_ca_cert_path }}"
-  register: _ca_info
+    valid_at:
+      renew_threshold: "+{{ cloudflare_aop_renew_days }}d"
+  register: _ca_check
   when: _ca_cert.stat.exists
 
-- name: Read leaf certificate info
+- name: Check leaf certificate expiry
   community.crypto.x509_certificate_info:
     path: "{{ cloudflare_aop_zone_cert_dir }}/leaf.pem"
-  register: _leaf_info
-  when: _leaf_cert.stat.exists
-
-- name: Calculate CA days until expiry
-  ansible.builtin.command: >-
-    echo $(( ($(date -d "{{ _ca_info.not_after }}" +%s) - $(date +%s)) / 86400 ))
-  register: _ca_days
-  changed_when: false
-  when: _ca_cert.stat.exists
-
-- name: Calculate leaf days until expiry
-  ansible.builtin.command: >-
-    echo $(( ($(date -d "{{ _leaf_info.not_after }}" +%s) - $(date +%s)) / 86400 ))
-  register: _leaf_days
-  changed_when: false
+    valid_at:
+      renew_threshold: "+{{ cloudflare_aop_renew_days }}d"
+  register: _leaf_check
   when: _leaf_cert.stat.exists
 
 # ── Determine renewal need ───────────────────────────────────────────
@@ -66,13 +56,13 @@
   ansible.builtin.set_fact:
     _ca_needs_renew: >-
       {{ (not _ca_cert.stat.exists)
-         or (_ca_cert.stat.exists and (_ca_days.stdout | int) < cloudflare_aop_renew_days) }}
+         or (_ca_cert.stat.exists and not _ca_check.valid_at.renew_threshold) }}
 
 - name: Set leaf renewal fact
   ansible.builtin.set_fact:
     _leaf_needs_renew: >-
       {{ (not _leaf_cert.stat.exists)
-         or (_leaf_cert.stat.exists and (_leaf_days.stdout | int) < cloudflare_aop_renew_days) }}
+         or (_leaf_cert.stat.exists and not _leaf_check.valid_at.renew_threshold) }}
 
 # ── CA key ───────────────────────────────────────────────────────────
 
