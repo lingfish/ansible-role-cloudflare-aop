@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-08-26
+
+### Fixed
+
+- Multi-zone loop only processed first zone due to `set_fact: cloudflare_aop_zone_name` host-scoped bleed (`tasks/main.yml:41`); make `cloudflare_aop_zone_cert_dir` lazy via `vars/main.yml:15` and use `_zone_info` directly
+- Handler `notify: "cloudflare_aop ca changed"` failed when playbook had no handler (`[ERROR] handler not found`); add `handlers/main.yml` no-op defaults that playbooks extend via `listen`
+- `ansible-lint: name[casing]` on handlers and `README.md` multi-zone `loop_var: aop_zone` warning for `item is undefined` with `include_role` + `apply:`
+
 ## [1.1.0] - 2026-08-26
 
 ### Added
