@@ -15,7 +15,6 @@
       enabled: true
     status_code: [200, 202]
   register: _enable_result
-  when: not _aop_enabled | bool
   notify: "cloudflare_aop cloudflare changed"
 
 - name: Verify AOP is enabled
