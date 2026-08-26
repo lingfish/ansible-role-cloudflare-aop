@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-08-26
+
+### Fixed
+
+- Enable task failed on third zone with `_aop_enabled is undefined` after `set_fact` removal; gate now solely via `tasks/main.yml:94` `_aop_settings` and remove inner `when` in `tasks/enable_aop.yml:18`
+
 ## [1.1.1] - 2026-08-26
 
 ### Fixed
