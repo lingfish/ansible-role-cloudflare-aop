@@ -2,12 +2,12 @@
 # tasks/main.yml - Main entry point for cloudflare_aop role
 #
 # Flow:
-# 1. Validate required variables
+# 1. Validate required variables + normalize hostname vars
 # 2. Fetch zone name from Cloudflare API
-# 3. Check current AOP status (if enabling)
-# 4. Generate CA + leaf certificates (optional)
-# 5. Upload leaf certificate to Cloudflare (optional)
-# 6. Enable zone-level AOP (optional)
+# 3. Check current AOP status (zone and hostname)
+# 4. Generate CA + leaf certificates (zone and/or hostname)
+# 5. Upload leaf certificates to Cloudflare
+# 6. Enable AOP (zone and/or hostname)
 # 7. Clean up old certificates (optional)
 # 8. Read CA cert info + set return facts
 
@@ -20,6 +20,70 @@
       Both cloudflare_aop_zone_id and cloudflare_aop_api_token must be set.
       See defaults/main.yml for details.
     success_msg: Required variables are set.
+  tags:
+    - cloudflare_aop
+
+- name: Normalize hostname variables
+  ansible.builtin.set_fact:
+    _aop_hostnames: >-
+      {{ (([cloudflare_aop_hostname] if (cloudflare_aop_hostname | default('') | length > 0) else []) + (cloudflare_aop_hostnames | default([]))) | unique | reject('equalto', '') | list }}
+  tags:
+    - cloudflare_aop
+
+- name: Warn about deprecated cloudflare_aop_hostname
+  ansible.builtin.debug:
+    msg: "[DEPRECATION] cloudflare_aop_hostname is deprecated, use cloudflare_aop_hostnames list."
+  when: cloudflare_aop_hostname | default('') | length > 0
+  tags:
+    - cloudflare_aop
+
+- name: Validate hostname mode
+  ansible.builtin.assert:
+    that:
+      - cloudflare_aop_hostname_mode in ['auto', 'zone', 'hostname', 'both']
+    fail_msg: "cloudflare_aop_hostname_mode must be one of auto, zone, hostname, both"
+  tags:
+    - cloudflare_aop
+
+- name: Validate hostnames when mode requires them
+  ansible.builtin.assert:
+    that:
+      - _aop_hostnames | length > 0
+    fail_msg: "cloudflare_aop_hostnames must be non-empty when cloudflare_aop_hostname_mode is hostname or both"
+  when: cloudflare_aop_hostname_mode in ['hostname', 'both']
+  tags:
+    - cloudflare_aop
+
+- name: Determine AOP execution mode
+  ansible.builtin.set_fact:
+    _aop_do_zone: >-
+      {{ (cloudflare_aop_hostname_mode == 'zone')
+         or (cloudflare_aop_hostname_mode == 'both')
+         or (cloudflare_aop_hostname_mode == 'auto' and (_aop_hostnames | length == 0))
+         or (cloudflare_aop_hostname_mode == 'auto' and (_aop_hostnames | length > 0)) }}
+    _aop_do_hostname: >-
+      {{ (cloudflare_aop_hostname_mode == 'hostname')
+         or (cloudflare_aop_hostname_mode == 'both')
+         or (cloudflare_aop_hostname_mode == 'auto' and (_aop_hostnames | length > 0)) }}
+  tags:
+    - cloudflare_aop
+
+- name: Override zone-only when mode is hostname
+  ansible.builtin.set_fact:
+    _aop_do_zone: false
+  when: cloudflare_aop_hostname_mode == 'hostname'
+  tags:
+    - cloudflare_aop
+
+- name: Validate hostname format
+  ansible.builtin.assert:
+    that:
+      - item is match('^([a-zA-Z0-9]([a-zA-Z0-9\\-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,}$')
+    fail_msg: "Invalid hostname '{{ item }}' — must be a valid FQDN"
+  loop: "{{ _aop_hostnames }}"
+  loop_control:
+    label: "{{ item }}"
+  when: _aop_do_hostname | bool
   tags:
     - cloudflare_aop
 
@@ -58,7 +122,7 @@
     - cloudflare_aop
     - cloudflare_aop_generate
 
-- name: Check current AOP settings
+- name: Check current zone AOP settings
   ansible.builtin.uri:
     url: "{{ cloudflare_aop_api_base }}{{ cloudflare_aop_settings_endpoint }}"
     method: GET
@@ -69,20 +133,115 @@
   register: _aop_settings
   changed_when: false
   when:
+    - _aop_do_zone | bool
     - cloudflare_aop_upload_cert | bool or cloudflare_aop_enable | bool
   tags:
     - cloudflare_aop
 
-- name: Generate certificates
+- name: Check current per-hostname AOP associations
+  ansible.builtin.uri:
+    url: "{{ cloudflare_aop_api_base }}{{ cloudflare_aop_hostnames_endpoint }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_aop_api_token }}"
+      Content-Type: "application/json"
+    status_code: [200, 202]
+  register: _hostname_settings
+  changed_when: false
+  when:
+    - _aop_do_hostname | bool
+    - cloudflare_aop_upload_cert | bool or cloudflare_aop_enable | bool
+  tags:
+    - cloudflare_aop
+
+- name: Generate certificates (CA and zone leaf)
   ansible.builtin.include_tasks: generate_cert.yml
   when: cloudflare_aop_generate_cert | bool
   tags:
     - cloudflare_aop
     - cloudflare_aop_generate
 
-- name: Upload certificate to Cloudflare
+- name: Generate per-hostname certificates
+  ansible.builtin.include_tasks: generate_hostname_certs.yml
+  when:
+    - cloudflare_aop_generate_cert | bool
+    - _aop_do_hostname | bool
+  tags:
+    - cloudflare_aop
+    - cloudflare_aop_generate
+
+- name: Read existing zone leaf for upload when generation skipped
+  when:
+    - not cloudflare_aop_generate_cert | bool
+    - _aop_do_zone | bool
+    - cloudflare_aop_upload_cert | bool
+  tags:
+    - cloudflare_aop
+    - cloudflare_aop_upload
+  block:
+    - name: Read existing zone leaf certificate
+      ansible.builtin.slurp:
+        src: "{{ cloudflare_aop_zone_cert_dir }}/leaf.pem"
+      register: _leaf_cert_content
+
+    - name: Read existing zone leaf key
+      ansible.builtin.slurp:
+        src: "{{ cloudflare_aop_zone_cert_dir }}/leaf.key"
+      register: _leaf_key_content
+
+    - name: Set zone certificate content facts for upload
+      ansible.builtin.set_fact:
+        _leaf_cert_pem: "{{ _leaf_cert_content.content | b64decode }}"
+        _leaf_key_pem: "{{ _leaf_key_content.content | b64decode }}"
+
+- name: Read existing per-hostname leaves for upload when generation skipped
+  when:
+    - not cloudflare_aop_generate_cert | bool
+    - _aop_do_hostname | bool
+    - cloudflare_aop_upload_cert | bool
+  tags:
+    - cloudflare_aop
+    - cloudflare_aop_upload
+  block:
+    - name: Read hostname leaf certificate
+      ansible.builtin.slurp:
+        src: "{{ cloudflare_aop_zone_cert_dir }}/{{ item }}/leaf.pem"
+      register: _hostname_existing_slurp_cert
+      loop: "{{ _aop_hostnames }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Read hostname leaf key
+      ansible.builtin.slurp:
+        src: "{{ cloudflare_aop_zone_cert_dir }}/{{ item }}/leaf.key"
+      register: _hostname_existing_slurp_key
+      loop: "{{ _aop_hostnames }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Build hostname certs dict from existing files
+      ansible.builtin.set_fact:
+        _hostname_certs: >-
+          {{ _hostname_certs | default({}) | combine({item.item: {'cert_pem': (item.content | b64decode), 'key_pem': (_hostname_existing_slurp_key.results[_idx].content | b64decode)}}) }}
+      loop: "{{ _hostname_existing_slurp_cert.results }}"
+      loop_control:
+        index_var: _idx
+        label: "{{ item.item }}"
+
+- name: Upload zone certificate to Cloudflare
   ansible.builtin.include_tasks: upload_cert.yml
-  when: cloudflare_aop_upload_cert | bool
+  when:
+    - cloudflare_aop_upload_cert | bool
+    - _aop_do_zone | bool
+  tags:
+    - cloudflare_aop
+    - cloudflare_aop_upload
+
+- name: Upload per-hostname certificates to Cloudflare
+  ansible.builtin.include_tasks: upload_hostname_certs.yml
+  when:
+    - cloudflare_aop_upload_cert | bool
+    - _aop_do_hostname | bool
   tags:
     - cloudflare_aop
     - cloudflare_aop_upload
@@ -91,26 +250,54 @@
   ansible.builtin.include_tasks: enable_aop.yml
   when:
     - cloudflare_aop_enable | bool
+    - _aop_do_zone | bool
     - not (_aop_settings.json.result.enabled | default(false) | bool)
   tags:
     - cloudflare_aop
     - cloudflare_aop_enable
 
-- name: Clean up old certificates
+- name: Enable per-hostname AOP
+  ansible.builtin.include_tasks: enable_hostname.yml
+  when:
+    - cloudflare_aop_enable | bool
+    - _aop_do_hostname | bool
+  tags:
+    - cloudflare_aop
+    - cloudflare_aop_enable
+
+- name: Clean up old zone certificates
   ansible.builtin.include_tasks: cleanup.yml
   when:
     - cloudflare_aop_cleanup_old | bool
+    - _aop_do_zone | bool
     - _upload_result is defined
     - _upload_result.json is defined
   tags:
     - cloudflare_aop
     - cloudflare_aop_cleanup
 
+- name: Clean up old per-hostname certificates
+  ansible.builtin.include_tasks: cleanup_hostname.yml
+  when:
+    - cloudflare_aop_cleanup_old | bool
+    - _aop_do_hostname | bool
+    - _hostname_upload_results is defined
+  tags:
+    - cloudflare_aop
+    - cloudflare_aop_cleanup
+
+- name: Check CA certificate for return facts
+  ansible.builtin.stat:
+    path: "{{ cloudflare_aop_ca_cert_path }}"
+  register: _ca_cert_for_facts
+  tags:
+    - cloudflare_aop
+
 - name: Read CA certificate info
   community.crypto.x509_certificate_info:
     path: "{{ cloudflare_aop_ca_cert_path }}"
   register: _ca_cert_info
-  when: cloudflare_aop_generate_cert | bool
+  when: _ca_cert_for_facts.stat.exists
   tags:
     - cloudflare_aop
 
@@ -119,13 +306,16 @@
     cloudflare_aop:
       zone_name: "{{ cloudflare_aop_zone_name | default(_zone_info.json.result.name | default(cloudflare_aop_zone_id)) }}"
       ca_cert_path: "{{ cloudflare_aop_ca_cert_path }}"
-      ca_serial_number: "{{ _ca_cert_info.serial_number | default('') }}"
-      ca_fingerprint: "{{ _ca_cert_info.fingerprints.sha256 | default('') }}"
+      ca_serial_number: "{{ _ca_cert_info.serial_number | default('') if _ca_cert_info is defined else '' }}"
+      ca_fingerprint: "{{ _ca_cert_info.fingerprints.sha256 | default('') if _ca_cert_info is defined else '' }}"
       leaf_cert_path: "{{ cloudflare_aop_zone_cert_dir }}/leaf.pem"
       leaf_key_path: "{{ cloudflare_aop_zone_cert_dir }}/leaf.key"
-      certificate_id: "{{ _upload_result.json.result.id | default('') }}"
-      status: "{{ _upload_result.json.result.status | default('unknown') }}"
-      enabled: "{{ _aop_settings.json.result.enabled | default(false) }}"
-      expires_on: "{{ _upload_result.json.result.expires_on | default('unknown') }}"
+      certificate_id: "{{ _upload_result.json.result.id | default('') if _upload_result is defined else '' }}"
+      status: "{{ _upload_result.json.result.status | default('unknown') if _upload_result is defined else 'unknown' }}"
+      enabled: "{{ _aop_settings.json.result.enabled | default(false) if _aop_settings is defined else false }}"
+      expires_on: "{{ _upload_result.json.result.expires_on | default('unknown') if _upload_result is defined else 'unknown' }}"
+      hostnames: "{{ _aop_hostnames | default([]) }}"
+      hostname_certs: "{{ _hostname_upload_results | default({}) }}"
+      hostname_enabled: "{{ _hostname_settings.json.result | default([]) if _hostname_settings is defined else [] }}"
   tags:
     - cloudflare_aop

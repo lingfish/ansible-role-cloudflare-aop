@@ -1,0 +1,122 @@
+---
+# tasks/generate_leaf.yml - Generate a single leaf certificate
+#
+# Expects vars:
+#   __leaf_dir: directory for this leaf (e.g. {{ cloudflare_aop_zone_cert_dir }} or {{ cloudflare_aop_zone_cert_dir }}/{{ hostname }})
+#   __leaf_cn: common name for the leaf
+#   aop_hostname: (optional) hostname string — when set, accumulates into _hostname_certs dict
+
+# ── Check existing state ─────────────────────────────────────────────
+
+- name: Check if leaf certificate already exists
+  ansible.builtin.stat:
+    path: "{{ __leaf_dir }}/leaf.pem"
+  register: __leaf_cert_stat
+
+- name: Check if leaf key already exists
+  ansible.builtin.stat:
+    path: "{{ __leaf_dir }}/leaf.key"
+  register: __leaf_key_stat
+
+- name: Check if leaf CSR already exists
+  ansible.builtin.stat:
+    path: "{{ __leaf_dir }}/leaf.csr"
+  register: __leaf_csr_file
+
+# ── Check expiry via valid_at (only when cert exists) ────────────────
+
+- name: Check leaf certificate expiry
+  community.crypto.x509_certificate_info:
+    path: "{{ __leaf_dir }}/leaf.pem"
+    valid_at:
+      renew_threshold: "+{{ cloudflare_aop_renew_days }}d"
+  register: __leaf_check
+  when: __leaf_cert_stat.stat.exists
+
+# ── Determine renewal need ───────────────────────────────────────────
+
+- name: Set leaf renewal fact
+  ansible.builtin.set_fact:
+    __leaf_needs_renew: >-
+      {{ (not __leaf_cert_stat.stat.exists)
+         or (__leaf_cert_stat.stat.exists and not __leaf_check.valid_at.renew_threshold) }}
+
+# ── Leaf key ─────────────────────────────────────────────────────────
+
+- name: Generate leaf private key (RSA)
+  community.crypto.openssl_privatekey:
+    path: "{{ __leaf_dir }}/leaf.key"
+    type: RSA
+    size: "{{ cloudflare_aop_key_size }}"
+    force: "{{ __leaf_key_stat.stat.exists and __leaf_needs_renew | bool }}"
+    mode: "0600"
+  when:
+    - not __leaf_key_stat.stat.exists or (__leaf_needs_renew | bool and __leaf_key_stat.stat.exists)
+    - cloudflare_aop_key_type == "rsa"
+
+- name: Generate leaf private key (ECC)
+  community.crypto.openssl_privatekey:
+    path: "{{ __leaf_dir }}/leaf.key"
+    type: ECC
+    curve: "{{ cloudflare_aop_ecc_curve }}"
+    force: "{{ __leaf_key_stat.stat.exists and __leaf_needs_renew | bool }}"
+    mode: "0600"
+  when:
+    - not __leaf_key_stat.stat.exists or (__leaf_needs_renew | bool and __leaf_key_stat.stat.exists)
+    - cloudflare_aop_key_type == "ecc"
+
+# ── Leaf cert ────────────────────────────────────────────────────────
+
+- name: Generate leaf CSR
+  community.crypto.openssl_csr:
+    path: "{{ __leaf_dir }}/leaf.csr"
+    privatekey_path: "{{ __leaf_dir }}/leaf.key"
+    common_name: "{{ __leaf_cn }}"
+    force: "{{ __leaf_csr_file.stat.exists and __leaf_needs_renew | bool }}"
+    mode: "0644"
+  when:
+    - not __leaf_csr_file.stat.exists or (__leaf_needs_renew | bool and __leaf_csr_file.stat.exists)
+
+- name: Read leaf CSR content
+  ansible.builtin.slurp:
+    src: "{{ __leaf_dir }}/leaf.csr"
+  register: __leaf_csr_content
+
+- name: Sign leaf certificate with CA
+  community.crypto.x509_certificate:
+    path: "{{ __leaf_dir }}/leaf.pem"
+    csr_content: "{{ __leaf_csr_content.content | b64decode }}"
+    provider: ownca
+    ownca_path: "{{ cloudflare_aop_ca_cert_path }}"
+    ownca_privatekey_path: "{{ cloudflare_aop_ca_key_path }}"
+    ownca_not_after: "+{{ cloudflare_aop_leaf_validity }}d"
+  when: __leaf_needs_renew | bool
+
+# ── Read cert content for upload ─────────────────────────────────────
+
+- name: Read leaf certificate for upload
+  ansible.builtin.slurp:
+    src: "{{ __leaf_dir }}/leaf.pem"
+  register: __leaf_slurp_cert
+
+- name: Read leaf private key for upload
+  ansible.builtin.slurp:
+    src: "{{ __leaf_dir }}/leaf.key"
+  register: __leaf_slurp_key
+
+- name: Set leaf pem facts
+  ansible.builtin.set_fact:
+    __leaf_pem: "{{ __leaf_slurp_cert.content | b64decode }}"
+    __leaf_key_pem: "{{ __leaf_slurp_key.content | b64decode }}"
+
+- name: Accumulate hostname certificate
+  ansible.builtin.set_fact:
+    _hostname_certs: >-
+      {{ (_hostname_certs | default({})) | combine({aop_hostname: {'cert_pem': __leaf_pem, 'key_pem': __leaf_key_pem}}) }}
+  when: aop_hostname is defined
+
+- name: Set zone leaf certificate facts
+  ansible.builtin.set_fact:
+    _leaf_cert_pem: "{{ __leaf_pem }}"
+    _leaf_key_pem: "{{ __leaf_key_pem }}"
+  when: aop_hostname is not defined

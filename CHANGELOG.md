@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Per-hostname Authenticated Origin Pulls with `cloudflare_aop_hostnames` list and `cloudflare_aop_hostname_mode` (auto/zone/hostname/both); shared CA, nested cert dirs `<zone>/<hostname>/leaf.pem`, batch `PUT /hostnames` enablement, and per-hostname cleanup via new tasks `generate_leaf.yml`, `generate_hostname_certs.yml`, `upload_hostname_certs.yml`/`_upload_hostname_single.yml`, `enable_hostname.yml`, `cleanup_hostname.yml`
+- Return facts extended with `hostnames`, `hostname_certs`, `hostname_enabled`
+
+### Changed
+
+- `README.md` documents per-hostname usage, layout, and limits; `vars/main.yml` adds hostname endpoints
+
 ## [1.1.2] - 2026-08-26
 
 ### Fixed

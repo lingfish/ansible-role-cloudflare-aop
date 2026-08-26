@@ -5,6 +5,8 @@ cloudflare_aop_api_base: "https://api.cloudflare.com/client/v4"
 cloudflare_aop_cert_endpoint: "/zones/{{ cloudflare_aop_zone_id }}/origin_tls_client_auth"
 cloudflare_aop_settings_endpoint: "/zones/{{ cloudflare_aop_zone_id }}/origin_tls_client_auth/settings"
 cloudflare_aop_zone_endpoint: "/zones/{{ cloudflare_aop_zone_id }}"
+cloudflare_aop_hostname_cert_endpoint: "/zones/{{ cloudflare_aop_zone_id }}/origin_tls_client_auth/hostnames/certificates"
+cloudflare_aop_hostnames_endpoint: "/zones/{{ cloudflare_aop_zone_id }}/origin_tls_client_auth/hostnames"
 
 # Shared CA lives at the base dir, leaf certs per-zone
 cloudflare_aop_ca_cert_path: "{{ cloudflare_aop_cert_dir }}/ca.pem"
@@ -16,3 +18,6 @@ cloudflare_aop_ca_csr_path: "{{ cloudflare_aop_cert_dir }}/ca.csr"
 # Avoids set_fact bleed when looping over multiple zones via include_role.
 cloudflare_aop_zone_cert_dir: >-
   {{ cloudflare_aop_cert_dir }}/{{ cloudflare_aop_zone_name | default(_zone_info.json.result.name | default(cloudflare_aop_zone_id)) }}
+
+# Per-hostname subdirectories are nested under the zone dir: <zone_dir>/<hostname>
+# Used as base; per-hostname leaf tasks compute {{ cloudflare_aop_zone_cert_dir }}/{{ aop_hostname }}

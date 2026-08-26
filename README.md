@@ -1,11 +1,11 @@
 # cloudflare_aop
 
-Ansible role for managing [Cloudflare Authenticated Origin Pulls (AOP)](https://developers.cloudflare.com/ssl/origin-configuration/authenticated-origin-pull/) at the zone level.
+Ansible role for managing [Cloudflare Authenticated Origin Pulls (AOP)](https://developers.cloudflare.com/ssl/origin-configuration/authenticated-origin-pull/) at zone and per-hostname level.
 
 This role handles the Cloudflare side of AOP:
-- Generates a CA root certificate and leaf client certificate on the **target host**
-- Uploads the leaf certificate to Cloudflare
-- Enables zone-level AOP
+- Generates a CA root certificate and leaf client certificates on the **target host**
+- Uploads the leaf certificate(s) to Cloudflare (zone and/or per-hostname)
+- Enables AOP at zone level and/or per-hostname
 - Optionally cleans up old certificates
 
 > **Note:** Certificates are generated directly on the target host (not the Ansible controller). For most setups, run this role against `localhost` and distribute the CA cert to your origin servers manually.
@@ -43,9 +43,12 @@ Your origin server configuration (nginx, Apache, etc.) is **not** managed by thi
 | `cloudflare_aop_leaf_validity` | `365` (1 year) | Leaf certificate validity in days |
 | `cloudflare_aop_renew_days` | `30` | Renew certificates when within this many days of expiry (0 = only if missing) |
 | `cloudflare_aop_generate_cert` | `true` | Generate CA + leaf certificates |
-| `cloudflare_aop_upload_cert` | `true` | Upload leaf certificate to Cloudflare |
-| `cloudflare_aop_enable` | `true` | Enable zone-level AOP |
+| `cloudflare_aop_upload_cert` | `true` | Upload leaf certificate(s) to Cloudflare |
+| `cloudflare_aop_enable` | `true` | Enable AOP (zone and/or per-hostname) |
 | `cloudflare_aop_cleanup_old` | `false` | Delete old certificates after upload |
+| `cloudflare_aop_hostnames` | `[]` | List of FQDNs for per-hostname AOP (e.g., `["app.example.com"]`). When non-empty the role creates nested leaf certs at `<cert_dir>/<zone>/<hostname>/leaf.pem`. Zone and per-hostname are independent and can be enabled together |
+| `cloudflare_aop_hostname` | `""` | Deprecated singular alias for `cloudflare_aop_hostnames` (merged automatically) |
+| `cloudflare_aop_hostname_mode` | `auto` | `auto` / `zone` / `hostname` / `both`. `auto` = hostname list non-empty → both, else zone only |
 
 ## Usage
 
@@ -101,6 +104,40 @@ Your origin server configuration (nginx, Apache, etc.) is **not** managed by thi
         cloudflare_aop_cleanup_old: true
 ```
 
+### Per-Hostname AOP
+
+Enable authenticated pulls only for specific hostnames within a zone (zone-level and per-hostname are independent; per-hostname takes precedence):
+
+```yaml
+- hosts: localhost
+  roles:
+    - role: cloudflare_aop
+      vars:
+        cloudflare_aop_zone_id: "your_zone_id"
+        cloudflare_aop_api_token: "your_api_token"
+        cloudflare_aop_hostnames:
+          - app.example.com
+          - api.example.com
+        # cloudflare_aop_hostname_mode: auto  # default: both when hostnames set
+```
+
+Nested leaf layout (shared CA):
+
+```
+/etc/cloudflare/aop/
+├── ca.pem
+├── ca.key
+├── example.com/
+│   ├── leaf.pem                         ← zone-level
+│   └── app.example.com/leaf.pem         ← per-hostname
+│   └── api.example.com/leaf.pem
+```
+
+To run per-hostname only (skip zone-level), set `cloudflare_aop_hostname_mode: hostname`. To force both explicitly: `both`.
+
+> Cloudflare limits: 10 hostname certificates per zone, 100 hostnames per certificate. This role creates one leaf per hostname (isolated rotation). Reuse of a single cert for many hostnames is not yet implemented.
+```
+
 ### Multiple Zones
 
 When run against a single host, all zones share one CA certificate. Each zone gets its own leaf certificate.
@@ -144,11 +181,16 @@ tasks:
 Certificate layout (all on one host):
 ```
 /etc/cloudflare/aop/
-├── ca.pem                ← Shared CA (same for all zones)
+├── ca.pem                ← Shared CA (same for all zones + hostnames)
 ├── ca.key
 ├── example.com/
-│   ├── leaf.pem          ← Leaf cert uploaded to zone 1
-│   └── leaf.key
+│   ├── leaf.pem          ← Leaf cert uploaded to zone 1 (zone-level)
+│   ├── app.example.com/
+│   │   ├── leaf.pem      ← Per-hostname leaf for app
+│   │   └── leaf.key
+│   └── api.example.com/
+│       ├── leaf.pem
+│       └── leaf.key
 └── example.org/
     ├── leaf.pem          ← Leaf cert uploaded to zone 2
     └── leaf.key
@@ -201,6 +243,13 @@ cloudflare_aop:
   status: "active"
   enabled: true
   expires_on: "2027-08-22T00:00:00Z"
+  hostnames: ["app.example.com"]
+  hostname_certs: # dict hostname -> upload result
+    app.example.com:
+      json: { result: { id: "def456...", status: "active" } }
+  hostname_enabled: # list from GET /hostnames
+    - hostname: app.example.com
+      enabled: true
 ```
 
 Use `ca_serial_number` or `ca_fingerprint` to cross-reference with the certificate issuer shown in the Cloudflare dashboard:
@@ -227,25 +276,31 @@ Access these in subsequent tasks:
 ┌───────────────────────────────────────────────────────┐
 │              Target Host (typically localhost)         │
 │                                                      │
-│  1. Generate CA cert (self-signed)                   │
-│  2. Generate leaf cert (signed by CA)                │
-│  3. Upload leaf cert to Cloudflare API               │
-│  4. Enable zone-level AOP                            │
+│  1. Generate CA cert (self-signed, shared)           │
+│  2. Generate leaf cert(s) (signed by CA)             │
+│     • zone leaf at <zone>/leaf.pem                   │
+│     • per-hostname leaves at <zone>/<hostname>/leaf.pem │
+│  3. Upload leaf cert(s) to Cloudflare API            │
+│     • zone: POST /zones/{id}/origin_tls_client_auth  │
+│     • hostname: POST /.../hostnames/certificates     │
+│  4. Enable AOP                                       │
+│     • zone: PUT /.../settings {enabled:true}         │
+│     • hostname: PUT /.../hostnames {config:[...]}    │
 │                                                      │
 │  Output:                                             │
 │    /etc/cloudflare/aop/ca.pem         (install on origin) │
 │    /etc/cloudflare/aop/<zone>/leaf.pem   (uploaded to CF) │
-│    /etc/cloudflare/aop/<zone>/leaf.key   (uploaded to CF) │
+│    /etc/cloudflare/aop/<zone>/<hostname>/leaf.pem       │
 └───────────────────────────────────────────────────────┘
          │
-         │  Upload leaf cert
+         │  Upload leaf cert(s)
          ▼
 ┌───────────────────────────────────────────────────────┐
 │               Cloudflare Edge                        │
 │                                                      │
 │  • Presents leaf cert during TLS handshake           │
-│  • Origin verifies cert against CA                   │
-│  • Rejects connections without valid client cert     │
+│  • Origin verifies cert against shared CA            │
+│  • Zone-level AOP or per-hostname (precedence)       │
 └───────────────────────────────────────────────────────┘
 ```
 
@@ -308,8 +363,8 @@ This role does not define handlers — it emits `notify` topics that your playbo
 
 | Topic | Fires when | Use for |
 |---|---|---|
-| `cloudflare_aop ca changed` | `ca.pem` is created or renewed (`tasks/generate_cert.yml:125`) | Reload/restart origin (Apache, nginx, HAProxy) |
-| `cloudflare_aop cloudflare changed` | Leaf uploaded (`tasks/upload_cert.yml:33`) or AOP enabled (`tasks/enable_aop.yml:6`) | Audit, cache purge, notifications |
+| `cloudflare_aop ca changed` | `ca.pem` is created or renewed (`tasks/generate_cert.yml:104`) | Reload/restart origin (Apache, nginx, HAProxy) |
+| `cloudflare_aop cloudflare changed` | Leaf uploaded (`tasks/upload_cert.yml:33` / `tasks/_upload_hostname_single.yml:14`) or AOP enabled (`tasks/enable_aop.yml:6` / `tasks/enable_hostname.yml:23`) | Audit, cache purge, notifications |
 
 Both are no-ops if no handler subscribes. Handlers dedupe to one run per play even when looping over multiple zones (`README.md:124`).
 

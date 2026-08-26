@@ -1,0 +1,43 @@
+---
+# tasks/cleanup_hostname.yml - Delete old per-hostname certificates
+#
+# Removes old hostname certificates from Cloudflare that are not the currently active ones.
+
+- name: List all hostname certificates
+  ansible.builtin.uri:
+    url: "{{ cloudflare_aop_api_base }}{{ cloudflare_aop_hostname_cert_endpoint }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_aop_api_token }}"
+      Content-Type: "application/json"
+    status_code: [200, 202]
+  register: _all_hostname_certs
+  changed_when: false
+
+- name: Build list of active hostname certificate IDs
+  ansible.builtin.set_fact:
+    _active_hostname_ids: >-
+      {{ _hostname_upload_results.values() | map(attribute='json.result.id') | list }}
+
+- name: Delete old hostname certificates
+  ansible.builtin.uri:
+    url: >-
+      {{ cloudflare_aop_api_base }}{{ cloudflare_aop_hostname_cert_endpoint }}/{{ item.id }}
+    method: DELETE
+    headers:
+      Authorization: "Bearer {{ cloudflare_aop_api_token }}"
+      Content-Type: "application/json"
+    status_code: [200, 202]
+  loop: "{{ _all_hostname_certs.json.result | default([]) }}"
+  loop_control:
+    label: "{{ item.id }} (expires: {{ item.expires_on }})"
+  when:
+    - item.id not in _active_hostname_ids
+  register: _hostname_delete_results
+
+- name: Report hostname cleanup results
+  ansible.builtin.debug:
+    msg: >-
+      Deleted {{ _hostname_delete_results.results | selectattr('changed', 'true') | list | length }}
+      old hostname certificate(s).
+  when: _hostname_delete_results is defined

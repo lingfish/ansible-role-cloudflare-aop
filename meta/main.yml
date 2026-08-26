@@ -4,7 +4,7 @@ galaxy_info:
   namespace: lingfish
   author: Jason
   description: >-
-    Manage Cloudflare Authenticated Origin Pulls (AOP) at the zone level.
+    Manage Cloudflare Authenticated Origin Pulls (AOP) at zone and per-hostname level.
     Generates client certificates, uploads them to Cloudflare, and enables AOP.
   license: MIT
   min_ansible_version: "2.15"
@@ -95,3 +95,21 @@ argument_specs:
         description: Delete old certificates after successful upload
         type: bool
         default: false
+      cloudflare_aop_hostnames:
+        description: List of FQDNs for per-hostname AOP
+        type: list
+        elements: str
+        default: []
+      cloudflare_aop_hostname:
+        description: Deprecated singular alias for cloudflare_aop_hostnames
+        type: str
+        default: ""
+      cloudflare_aop_hostname_mode:
+        description: Mode for AOP (auto, zone, hostname, both)
+        type: str
+        choices:
+          - auto
+          - zone
+          - hostname
+          - both
+        default: auto

@@ -60,3 +60,43 @@
         that:
           - leaf_info.subject.commonName == "test_zone_id_12345"
         fail_msg: Leaf certificate has unexpected properties
+
+    - name: Check per-hostname leaf certificates exist
+      ansible.builtin.stat:
+        path: "/etc/cloudflare/aop/test_zone_id_12345/{{ item }}/leaf.pem"
+      register: hostname_leaves
+      loop:
+        - app.example.com
+        - api.example.com
+
+    - name: Assert per-hostname leaf certificates exist
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.size > 0
+        fail_msg: "Per-hostname leaf missing for {{ item.item }}"
+      loop: "{{ hostname_leaves.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Verify per-hostname leaf CN via loop
+      community.crypto.x509_certificate_info:
+        path: "/etc/cloudflare/aop/test_zone_id_12345/app.example.com/leaf.pem"
+      register: app_leaf
+
+    - name: Assert app hostname leaf CN
+      ansible.builtin.assert:
+        that:
+          - app_leaf.subject.commonName == "app.example.com"
+        fail_msg: "app.example.com leaf CN mismatch"
+
+    - name: Verify api hostname leaf CN
+      community.crypto.x509_certificate_info:
+        path: "/etc/cloudflare/aop/test_zone_id_12345/api.example.com/leaf.pem"
+      register: api_leaf
+
+    - name: Assert api hostname leaf CN
+      ansible.builtin.assert:
+        that:
+          - api_leaf.subject.commonName == "api.example.com"
+        fail_msg: "api.example.com leaf CN mismatch"

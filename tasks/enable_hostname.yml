@@ -1,0 +1,62 @@
+---
+# tasks/enable_hostname.yml - Enable per-hostname Authenticated Origin Pulls
+
+- name: Get current hostname associations
+  ansible.builtin.uri:
+    url: "{{ cloudflare_aop_api_base }}{{ cloudflare_aop_hostnames_endpoint }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_aop_api_token }}"
+      Content-Type: "application/json"
+    status_code: [200, 202]
+  register: _hostname_current
+  changed_when: false
+
+# Build proper config: list of {hostname, cert_id, enabled}
+- name: Set hostname config payload
+  ansible.builtin.set_fact:
+    _hostname_put_config: >-
+      {{ _hostname_put_config | default([]) + [{'hostname': item, 'cert_id': _hostname_upload_results[item].json.result.id, 'enabled': true}] }}
+  loop: "{{ _aop_hostnames }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Enable per-hostname AOP
+  ansible.builtin.uri:
+    url: "{{ cloudflare_aop_api_base }}{{ cloudflare_aop_hostnames_endpoint }}"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ cloudflare_aop_api_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      config: "{{ _hostname_put_config }}"
+    status_code: [200, 202]
+  register: _hostname_enable_result
+  notify: "cloudflare_aop cloudflare changed"
+
+- name: Verify hostname AOP is enabled
+  ansible.builtin.uri:
+    url: "{{ cloudflare_aop_api_base }}{{ cloudflare_aop_hostnames_endpoint }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_aop_api_token }}"
+      Content-Type: "application/json"
+    status_code: [200, 202]
+  register: _hostname_verify
+  changed_when: false
+
+- name: Fail if per-hostname enablement verification failed
+  ansible.builtin.fail:
+    msg: >-
+      Failed to enable per-hostname AOP for {{ item }}.
+      Current associations: {{ _hostname_verify.json.result | default([]) }}
+  when: >
+    _hostname_verify.json.result | selectattr('hostname', 'equalto', item) | selectattr('enabled', 'equalto', true) | list | length == 0
+  loop: "{{ _aop_hostnames }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Per-hostname AOP enabled successfully
+  ansible.builtin.debug:
+    msg: "Per-hostname Authenticated Origin Pulls enabled for {{ _aop_hostnames | join(', ') }}"

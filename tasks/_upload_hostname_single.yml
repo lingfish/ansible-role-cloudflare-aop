@@ -1,0 +1,109 @@
+---
+# tasks/_upload_hostname_single.yml - Upload a single hostname certificate
+# Expects: aop_hostname
+
+- name: Read leaf certificate serial for hostname
+  community.crypto.x509_certificate_info:
+    content: "{{ _hostname_certs[aop_hostname].cert_pem }}"
+  register: _hostname_leaf_info
+
+- name: Find existing hostname certificate with matching serial
+  ansible.builtin.set_fact:
+    _hostname_existing: >-
+      {{ _hostname_cert_list.json.result | default([]) | selectattr('serial_number', 'equalto', _hostname_leaf_info.subject.serialNumber | default('')) | first | default({}) }}
+
+- name: Upload hostname certificate to Cloudflare
+  ansible.builtin.uri:
+    url: "{{ cloudflare_aop_api_base }}{{ cloudflare_aop_hostname_cert_endpoint }}"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ cloudflare_aop_api_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      certificate: "{{ _hostname_certs[aop_hostname].cert_pem }}"
+      private_key: "{{ _hostname_certs[aop_hostname].key_pem }}"
+    status_code: [200, 201, 202, 400]
+  register: _hostname_upload_single
+  when:
+    - _hostname_certs[aop_hostname] is defined
+    - _hostname_existing.id is not defined
+  notify: "cloudflare_aop cloudflare changed"
+
+- name: Set hostname cert ID from existing certificate
+  ansible.builtin.set_fact:
+    _hostname_upload_single:
+      json:
+        result:
+          id: "{{ _hostname_existing.id }}"
+          status: "active"
+      success: true
+  when:
+    - _hostname_existing is defined
+    - _hostname_existing.id is defined
+
+- name: Fail if hostname upload failed with unexpected error
+  ansible.builtin.fail:
+    msg: >-
+      Hostname certificate upload failed for {{ aop_hostname }}.
+      API response: {{ _hostname_upload_single.json.errors | default('unknown error') }}
+  when:
+    - _hostname_upload_single is defined
+    - _hostname_upload_single.status | default(200) == 400
+    - _hostname_upload_single.json.errors | default([]) | selectattr('code', 'equalto', 1406) | list | length == 0
+
+- name: Handle hostname already exists error
+  when:
+    - _hostname_upload_single is defined
+    - _hostname_upload_single.status | default(200) == 400
+    - _hostname_upload_single.json.errors | default([]) | selectattr('code', 'equalto', 1406) | list | length > 0
+  block:
+    - name: Find existing hostname cert after already-exists error
+      ansible.builtin.set_fact:
+        _hostname_existing_id: "{{ (_hostname_cert_list.json.result | first).id | default('') }}"
+
+    - name: Set hostname upload result from existing cert
+      ansible.builtin.set_fact:
+        _hostname_upload_single:
+          json:
+            result:
+              id: "{{ _hostname_existing_id }}"
+              status: "active"
+          success: true
+
+- name: Wait for hostname certificate to become active
+  ansible.builtin.uri:
+    url: >-
+      {{ cloudflare_aop_api_base }}{{ cloudflare_aop_hostname_cert_endpoint }}/{{ _hostname_upload_single.json.result.id }}
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_aop_api_token }}"
+      Content-Type: "application/json"
+    status_code: [200, 202]
+  register: _hostname_cert_status
+  changed_when: false
+  until: _hostname_cert_status.json.result.status == "active"
+  retries: 30
+  delay: 10
+  when:
+    - _hostname_upload_single is defined
+    - _hostname_upload_single.json.result is defined
+    - _hostname_upload_single.json.result.id | length > 0
+
+- name: Accumulate hostname upload result
+  ansible.builtin.set_fact:
+    _hostname_upload_results: >-
+      {{ (_hostname_upload_results | default({})) | combine({aop_hostname: _hostname_upload_single}) }}
+
+- name: Accumulate hostname cert status
+  ansible.builtin.set_fact:
+    _hostname_cert_statuses: >-
+      {{ (_hostname_cert_statuses | default({})) | combine({aop_hostname: _hostname_cert_status}) }}
+  when: _hostname_cert_status is defined
+
+- name: Hostname certificate ready
+  ansible.builtin.debug:
+    msg: >-
+      Hostname {{ aop_hostname }} certificate {{ _hostname_upload_single.json.result.id }}
+      (status: {{ _hostname_cert_status.json.result.status | default(_hostname_upload_single.json.result.status | default('unknown')) }})
+  when: _hostname_upload_single.json.result.id is defined
