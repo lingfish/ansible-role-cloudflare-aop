@@ -1,0 +1,15 @@
+---
+# Handlers for cloudflare_aop
+# These are no-op defaults that allow notify topics to be subscribed to
+# via listen from playbooks without requiring handler chaining.
+# Playbook handlers should use listen: "<topic>" to react.
+
+- name: cloudflare_aop ca changed
+  ansible.builtin.debug:
+    msg: "cloudflare_aop: CA changed"
+  listen: "cloudflare_aop ca changed"
+
+- name: cloudflare_aop cloudflare changed
+  ansible.builtin.debug:
+    msg: "cloudflare_aop: cloudflare changed"
+  listen: "cloudflare_aop cloudflare changed"
