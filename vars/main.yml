@@ -12,4 +12,7 @@ cloudflare_aop_ca_key_path: "{{ cloudflare_aop_cert_dir }}/ca.key"
 cloudflare_aop_ca_csr_path: "{{ cloudflare_aop_cert_dir }}/ca.csr"
 
 # Per-zone leaf certificate directory (uses zone name, not zone ID)
-cloudflare_aop_zone_cert_dir: "{{ cloudflare_aop_cert_dir }}/{{ cloudflare_aop_zone_name }}"
+# Lazy: uses explicit cloudflare_aop_zone_name if set, otherwise API result, otherwise zone_id.
+# Avoids set_fact bleed when looping over multiple zones via include_role.
+cloudflare_aop_zone_cert_dir: >-
+  {{ cloudflare_aop_cert_dir }}/{{ cloudflare_aop_zone_name | default(_zone_info.json.result.name | default(cloudflare_aop_zone_id)) }}

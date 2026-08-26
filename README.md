@@ -336,6 +336,8 @@ Both are no-ops if no handler subscribes. Handlers dedupe to one run per play ev
 
 See [Handlers: running operations on change](https://docs.ansible.com/projects/ansible/latest/playbook_guide/playbooks_handlers.html) and `Handlers in roles` (`role_name : handler_name` with `listen` for decoupling).
 
+> **geerlingguy.apache users:** Do not create a bridge handler that `listen: "cloudflare_aop ca changed"` and `notify: restart apache` — the chained `restart apache` (`handlers/main.yml:1`) will not run without an extra `meta: flush_handlers` (handler-order `1:roles` vs `2:handlers`, `PR#80898`). Instead duplicate the service task as shown above with `listen: "cloudflare_aop ca changed"` and `name: "{{ apache_service }}"` / `state: "{{ apache_restart_state }}"`. This respects the role's vars without forking it.
+
 ## Certificate Renewal
 
 The role checks certificate expiry on every run. If a certificate exists but is within `cloudflare_aop_renew_days` of expiry (default: 30), it is regenerated and re-uploaded automatically.

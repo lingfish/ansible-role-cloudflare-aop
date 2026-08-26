@@ -38,12 +38,6 @@
   tags:
     - cloudflare_aop
 
-- name: Set zone name fact
-  ansible.builtin.set_fact:
-    cloudflare_aop_zone_name: >-
-      {{ _zone_info.json.result.name | default(cloudflare_aop_zone_id) }}
-  when: cloudflare_aop_zone_name | default('') | length == 0
-
 - name: Ensure base cert directory exists
   ansible.builtin.file:
     path: "{{ cloudflare_aop_cert_dir }}"
@@ -79,11 +73,6 @@
   tags:
     - cloudflare_aop
 
-- name: Set AOP status fact
-  ansible.builtin.set_fact:
-    _aop_enabled: "{{ _aop_settings.json.result.enabled | default(false) }}"
-  when: _aop_settings is defined and _aop_settings is not changed
-
 - name: Generate certificates
   ansible.builtin.include_tasks: generate_cert.yml
   when: cloudflare_aop_generate_cert | bool
@@ -102,7 +91,7 @@
   ansible.builtin.include_tasks: enable_aop.yml
   when:
     - cloudflare_aop_enable | bool
-    - not (_aop_enabled | default(false) | bool)
+    - not (_aop_settings.json.result.enabled | default(false) | bool)
   tags:
     - cloudflare_aop
     - cloudflare_aop_enable
@@ -128,7 +117,7 @@
 - name: Set role return facts
   ansible.builtin.set_fact:
     cloudflare_aop:
-      zone_name: "{{ cloudflare_aop_zone_name }}"
+      zone_name: "{{ cloudflare_aop_zone_name | default(_zone_info.json.result.name | default(cloudflare_aop_zone_id)) }}"
       ca_cert_path: "{{ cloudflare_aop_ca_cert_path }}"
       ca_serial_number: "{{ _ca_cert_info.serial_number | default('') }}"
       ca_fingerprint: "{{ _ca_cert_info.fingerprints.sha256 | default('') }}"
@@ -136,7 +125,7 @@
       leaf_key_path: "{{ cloudflare_aop_zone_cert_dir }}/leaf.key"
       certificate_id: "{{ _upload_result.json.result.id | default('') }}"
       status: "{{ _upload_result.json.result.status | default('unknown') }}"
-      enabled: "{{ _aop_enabled | default(false) }}"
+      enabled: "{{ _aop_settings.json.result.enabled | default(false) }}"
       expires_on: "{{ _upload_result.json.result.expires_on | default('unknown') }}"
   tags:
     - cloudflare_aop
