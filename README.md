@@ -129,12 +129,15 @@ tasks:
     tags:
       - always
     vars:
-      cloudflare_aop_zone_id: "{{ item.zone_id }}"
-      cloudflare_aop_api_token: "{{ item.api_token }}"
+      cloudflare_aop_zone_id: "{{ aop_zone.zone_id }}"
+      cloudflare_aop_api_token: "{{ aop_zone.api_token }}"
     loop: "{{ cloudflare_aop_zones }}"
     loop_control:
-      label: "{{ item.zone_id }}"
+      loop_var: aop_zone
+      label: "{{ aop_zone.zone_id }}"
 ```
+
+> **Note:** Use `loop_var: aop_zone` (not `item`) to avoid `item is undefined` when `vars:` are evaluated with `apply:`. Avoid storing `api_token: "{{ cloudflare_aop_api_token }}"` as a templated string in `host_vars` — store the literal token per zone (as shown above) to prevent double-templating.
 
 > **Why `include_role` instead of `import_role`?** `import_role` does not support loops, and its static variable scoping causes `set_fact` values (like zone names) to bleed between invocations. `include_role` with `apply: { tags: [...] }` provides proper variable scoping per loop iteration while preserving tag inheritance.
 
