@@ -1,5 +1,9 @@
 # cloudflare_aop
 
+[![CI](https://github.com/lingfish/ansible-role-cloudflare-aop/actions/workflows/ci.yml/badge.svg)](https://github.com/lingfish/ansible-role-cloudflare-aop/actions)
+[![Galaxy](https://img.shields.io/badge/galaxy-lingfish.cloudflare_aop-blue.svg)](https://galaxy.ansible.com/ui/standalone/roles/lingfish/cloudflare_aop)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Ansible role for managing [Cloudflare Authenticated Origin Pulls (AOP)](https://developers.cloudflare.com/ssl/origin-configuration/authenticated-origin-pull/) at zone and per-hostname level.
 
 This role handles the Cloudflare side of AOP:
