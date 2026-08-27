@@ -54,12 +54,12 @@
   ansible.builtin.fail:
     msg: >-
       Failed to enable per-hostname AOP for {{ item }}.
-      Expected enabled=true with cert_status active/pending_deployment, got:
+      Expected enabled=true with status active/pending_deployment, got:
       {{ _hostname_verify.json.result | selectattr('hostname', 'equalto', item) | list }}
       Full result: {{ _hostname_verify.json.result | default([]) }}
   when: >
     _hostname_verify.json.result | selectattr('hostname', 'equalto', item) | selectattr('enabled', 'equalto', true) | list | length == 0
-    or _hostname_verify.json.result | selectattr('hostname', 'equalto', item) | map(attribute='cert_status') | select('in', ['active', 'pending_deployment']) | list | length == 0
+    or _hostname_verify.json.result | selectattr('hostname', 'equalto', item) | map(attribute='status', default='') | select('in', ['active', 'pending_deployment']) | list | length == 0
   loop: "{{ _aop_hostnames }}"
   loop_control:
     label: "{{ item }}"
