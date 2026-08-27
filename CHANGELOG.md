@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-08-27
+
+### Fixed
+
+- Galaxy publish CI used `collection build/publish` for a role (no `galaxy.yml`); replace with `ansible-galaxy role import lingfish ansible-role-cloudflare-aop --token` (` .github/workflows/ci.yml:82`)
+
+### Changed
+
+- Document Galaxy publishing (tag convention, release workflow, consumer `requirements.yml`) in `README.md`; `AGENTS.md` updated to `role import` (no `collection build`)
+
+### Removed
+
+- Delete stale `PLAN.md` (pre-1.0 spec drifted from 1.2.0 per-hostname implementation) and `NOTES-galaxy-import.md` (parked Galaxy import notes, now actioned)
+
 ## [1.2.0] - 2026-08-27
 
 ### Added

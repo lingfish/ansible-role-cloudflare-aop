@@ -446,6 +446,35 @@ molecule destroy
 4. Run `molecule test` and `ansible-lint`
 5. Submit a pull request
 
+## Galaxy Publishing
+
+Tag convention: semver without `v` prefix (`1.0.0`, `1.1.0`). Galaxy strips `v` if present but clean tags avoid confusion.
+
+Release workflow (CI auto-imports on `release: published`):
+
+```bash
+git tag -a X.Y.Z -m "Description"
+git push origin X.Y.Z
+gh release create X.Y.Z --title "X.Y.Z" --generate-notes
+# CI triggers on release → ansible-galaxy role import → Galaxy picks up version
+```
+
+Consumer usage once published:
+
+```bash
+ansible-galaxy install lingfish.cloudflare_aop
+```
+
+Or pin a version in `requirements.yml`:
+
+```yaml
+roles:
+  - name: lingfish.cloudflare_aop
+    version: "1.2.0"
+```
+
+Token: create at https://galaxy.ansible.com/ui/token → repo secret `GALAXY_API_KEY`. Re-running `role import` on the same tag is safe; deleting a git tag removes that Galaxy version.
+
 ## License
 
 MIT

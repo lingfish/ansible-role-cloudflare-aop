@@ -79,8 +79,7 @@ jobs:
       - name: Install Ansible
         run: pip install ansible-core
 
-      - name: Build collection
-        run: ansible-galaxy collection build --output-path .
-
-      - name: Publish to Galaxy
-        run: ansible-galaxy collection publish ./*.tar.gz --api-key "${{ secrets.GALAXY_API_KEY }}"
+      - name: Import role to Galaxy
+        run: >-
+          ansible-galaxy role import lingfish ansible-role-cloudflare-aop
+          --token "${{ secrets.GALAXY_API_KEY }}"

@@ -17,8 +17,8 @@ molecule test
 # Molecule converge only (faster iteration)
 molecule converge
 
-# Galaxy build
-ansible-galaxy collection build --output-path .
+# Galaxy publish (release only — CI imports via `ansible-galaxy role import`)
+# Manual: ansible-galaxy role import lingfish ansible-role-cloudflare-aop --token "$GALAXY_API_KEY"
 ```
 
 ## CI Order
