@@ -100,3 +100,22 @@
         that:
           - api_leaf.subject.commonName == "api.example.com"
         fail_msg: "api.example.com leaf CN mismatch"
+
+    - name: Verify role return facts for hostname handling
+      ansible.builtin.assert:
+        that:
+          - hostvars[inventory_hostname].cloudflare_aop is defined
+          - hostvars[inventory_hostname].cloudflare_aop.zone_name == "test_zone_id_12345"
+          - hostvars[inventory_hostname].cloudflare_aop.ca_cert_path == "/etc/cloudflare/aop/ca.pem"
+          - "'app.example.com' in hostvars[inventory_hostname].cloudflare_aop.hostnames"
+          - "'api.example.com' in hostvars[inventory_hostname].cloudflare_aop.hostnames"
+          - hostvars[inventory_hostname].cloudflare_aop.hostnames | length == 2
+        fail_msg: "cloudflare_aop return facts missing or incorrect for per-hostname (upload/enable were false, so hostname_certs is empty by design)"
+
+    - name: Note why API enable not covered in molecule
+      ansible.builtin.debug:
+        msg: >-
+          Molecule runs with cloudflare_aop_upload_cert=false and enable=false (fake token),
+          so tasks/enable_hostname.yml retry logic for pending_deployment (status:active) is not exercised here.
+          Real API verification was done manually against kisha.lucid.net.au (www.lucid.net.au).
+          To cover enable in CI, stub api.cloudflare.com or run with upload/enable true against a test zone.
