@@ -1,0 +1,20 @@
+---
+# tasks/upload_hostname_certs.yml - Upload per-hostname leaf certificates
+
+- name: List existing hostname certificates
+  ansible.builtin.uri:
+    url: "{{ cloudflare_aop_api_base }}{{ cloudflare_aop_hostname_cert_endpoint }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_aop_api_token }}"
+      Content-Type: "application/json"
+    status_code: [200, 202]
+  register: _hostname_cert_list
+  changed_when: false
+
+- name: Upload certificates for each hostname
+  ansible.builtin.include_tasks: _upload_hostname_single.yml
+  loop: "{{ _aop_hostnames }}"
+  loop_control:
+    loop_var: aop_hostname
+    label: "{{ aop_hostname }}"

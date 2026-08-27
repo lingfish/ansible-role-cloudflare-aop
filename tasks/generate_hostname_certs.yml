@@ -1,0 +1,26 @@
+---
+# tasks/generate_hostname_certs.yml - Generate per-hostname leaf certificates
+#
+# Uses shared CA from generate_cert.yml, creates nested dirs per hostname:
+#   {{ cloudflare_aop_zone_cert_dir }}/{{ hostname }}/leaf.pem
+# Each hostname gets its own leaf key/CSR/cert signed by the shared CA.
+
+- name: Ensure per-hostname cert directories exist
+  ansible.builtin.file:
+    path: "{{ cloudflare_aop_zone_cert_dir }}/{{ item }}"
+    state: directory
+    mode: "0700"
+  loop: "{{ _aop_hostnames }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Generate leaf certificate per hostname
+  ansible.builtin.include_tasks: generate_leaf.yml
+  vars:
+    __leaf_dir: "{{ cloudflare_aop_zone_cert_dir }}/{{ aop_hostname }}"
+    __leaf_cn: "{{ aop_hostname }}"
+    aop_hostname: "{{ aop_hostname }}"
+  loop: "{{ _aop_hostnames }}"
+  loop_control:
+    loop_var: aop_hostname
+    label: "{{ aop_hostname }}"

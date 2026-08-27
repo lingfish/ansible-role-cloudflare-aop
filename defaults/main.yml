@@ -1,8 +1,8 @@
 ---
-# cloudflare_aop - Ansible role for Cloudflare Authenticated Origin Pulls (zone-level)
+# cloudflare_aop - Ansible role for Cloudflare Authenticated Origin Pulls
 #
 # This role generates client certificates, uploads them to Cloudflare,
-# and enables zone-level Authenticated Origin Pulls.
+# and enables Authenticated Origin Pulls at zone-level and/or per-hostname.
 
 # =============================================================================
 # Required variables
@@ -49,6 +49,21 @@ cloudflare_aop_leaf_validity: 365
 
 # Renew certificates when within this many days of expiry (0 = only generate if missing)
 cloudflare_aop_renew_days: 30
+
+# Per-hostname AOP: list of FQDNs within the zone to enable per-hostname AOP for.
+# When non-empty, the role generates a leaf per hostname (nested under zone dir),
+# uploads to the hostname certificates endpoint, and associates each hostname.
+# Zone-level and per-hostname are independent — both can be enabled on the same zone.
+# When empty, only zone-level is managed (backward compatible).
+cloudflare_aop_hostnames: []
+
+# Deprecated singular alias for cloudflare_aop_hostnames (kept for BC, merged automatically)
+# cloudflare_aop_hostname: ""
+
+# Mode: auto (default) | zone | hostname | both
+# auto: if hostnames non-empty → both, else zone
+# zone: only zone-level; hostname: only per-hostname; both: enable both
+cloudflare_aop_hostname_mode: auto
 
 # =============================================================================
 # Control flags

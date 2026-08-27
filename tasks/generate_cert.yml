@@ -1,16 +1,16 @@
 ---
-# tasks/generate_cert.yml - Generate CA and leaf certificates
+# tasks/generate_cert.yml - Generate CA and zone leaf certificates
 #
 # Creates a shared self-signed CA certificate (at the base cert dir)
 # and a per-zone leaf certificate signed by that CA.
-# The leaf certificate is what gets uploaded to Cloudflare for AOP.
+# The leaf certificate is what gets uploaded to Cloudflare for zone-level AOP.
 # The CA certificate is what you install on your origin server.
 #
 # Supports automatic renewal: if a cert exists but is within
 # cloudflare_aop_renew_days of expiry (or already expired),
 # it will be regenerated and re-uploaded.
 
-# ── Check existing state ─────────────────────────────────────────────
+# ── Check existing state for CA ─────────────────────────────────────
 
 - name: Check if CA certificate already exists
   ansible.builtin.stat:
@@ -27,21 +27,6 @@
     path: "{{ cloudflare_aop_ca_csr_path }}"
   register: _ca_csr_file
 
-- name: Check if leaf certificate already exists
-  ansible.builtin.stat:
-    path: "{{ cloudflare_aop_zone_cert_dir }}/leaf.pem"
-  register: _leaf_cert
-
-- name: Check if leaf key already exists
-  ansible.builtin.stat:
-    path: "{{ cloudflare_aop_zone_cert_dir }}/leaf.key"
-  register: _leaf_key
-
-- name: Check if leaf CSR already exists
-  ansible.builtin.stat:
-    path: "{{ cloudflare_aop_zone_cert_dir }}/leaf.csr"
-  register: _leaf_csr_file
-
 # ── Check expiry via valid_at (only when cert exists) ────────────────
 
 - name: Check CA certificate expiry
@@ -52,14 +37,6 @@
   register: _ca_check
   when: _ca_cert.stat.exists
 
-- name: Check leaf certificate expiry
-  community.crypto.x509_certificate_info:
-    path: "{{ cloudflare_aop_zone_cert_dir }}/leaf.pem"
-    valid_at:
-      renew_threshold: "+{{ cloudflare_aop_renew_days }}d"
-  register: _leaf_check
-  when: _leaf_cert.stat.exists
-
 # ── Determine renewal need ───────────────────────────────────────────
 
 - name: Set CA renewal fact
@@ -67,12 +44,6 @@
     _ca_needs_renew: >-
       {{ (not _ca_cert.stat.exists)
          or (_ca_cert.stat.exists and not _ca_check.valid_at.renew_threshold) }}
-
-- name: Set leaf renewal fact
-  ansible.builtin.set_fact:
-    _leaf_needs_renew: >-
-      {{ (not _leaf_cert.stat.exists)
-         or (_leaf_cert.stat.exists and not _leaf_check.valid_at.renew_threshold) }}
 
 # ── CA key ───────────────────────────────────────────────────────────
 
@@ -132,70 +103,11 @@
   when: _ca_needs_renew | bool
   notify: "cloudflare_aop ca changed"
 
-# ── Leaf key ─────────────────────────────────────────────────────────
+# ── Zone leaf (delegated to generate_leaf.yml) ─────────────────────
 
-- name: Generate leaf private key (RSA)
-  community.crypto.openssl_privatekey:
-    path: "{{ cloudflare_aop_zone_cert_dir }}/leaf.key"
-    type: RSA
-    size: "{{ cloudflare_aop_key_size }}"
-    force: "{{ _leaf_key.stat.exists and _leaf_needs_renew | bool }}"
-    mode: "0600"
-  when:
-    - not _leaf_key.stat.exists or (_leaf_needs_renew | bool and _leaf_key.stat.exists)
-    - cloudflare_aop_key_type == "rsa"
-
-- name: Generate leaf private key (ECC)
-  community.crypto.openssl_privatekey:
-    path: "{{ cloudflare_aop_zone_cert_dir }}/leaf.key"
-    type: ECC
-    curve: "{{ cloudflare_aop_ecc_curve }}"
-    force: "{{ _leaf_key.stat.exists and _leaf_needs_renew | bool }}"
-    mode: "0600"
-  when:
-    - not _leaf_key.stat.exists or (_leaf_needs_renew | bool and _leaf_key.stat.exists)
-    - cloudflare_aop_key_type == "ecc"
-
-# ── Leaf cert ────────────────────────────────────────────────────────
-
-- name: Generate leaf CSR
-  community.crypto.openssl_csr:
-    path: "{{ cloudflare_aop_zone_cert_dir }}/leaf.csr"
-    privatekey_path: "{{ cloudflare_aop_zone_cert_dir }}/leaf.key"
-    common_name: "{{ cloudflare_aop_leaf_common_name }}"
-    force: "{{ _leaf_csr_file.stat.exists and _leaf_needs_renew | bool }}"
-    mode: "0644"
-  when:
-    - not _leaf_csr_file.stat.exists or (_leaf_needs_renew | bool and _leaf_csr_file.stat.exists)
-
-- name: Read leaf CSR content
-  ansible.builtin.slurp:
-    src: "{{ cloudflare_aop_zone_cert_dir }}/leaf.csr"
-  register: _leaf_csr_content
-
-- name: Sign leaf certificate with CA
-  community.crypto.x509_certificate:
-    path: "{{ cloudflare_aop_zone_cert_dir }}/leaf.pem"
-    csr_content: "{{ _leaf_csr_content.content | b64decode }}"
-    provider: ownca
-    ownca_path: "{{ cloudflare_aop_ca_cert_path }}"
-    ownca_privatekey_path: "{{ cloudflare_aop_ca_key_path }}"
-    ownca_not_after: "+{{ cloudflare_aop_leaf_validity }}d"
-  when: _leaf_needs_renew | bool
-
-# ── Read cert content for upload ─────────────────────────────────────
-
-- name: Read leaf certificate for upload
-  ansible.builtin.slurp:
-    src: "{{ cloudflare_aop_zone_cert_dir }}/leaf.pem"
-  register: _leaf_cert_content
-
-- name: Read leaf private key for upload
-  ansible.builtin.slurp:
-    src: "{{ cloudflare_aop_zone_cert_dir }}/leaf.key"
-  register: _leaf_key_content
-
-- name: Set certificate content facts
-  ansible.builtin.set_fact:
-    _leaf_cert_pem: "{{ _leaf_cert_content.content | b64decode }}"
-    _leaf_key_pem: "{{ _leaf_key_content.content | b64decode }}"
+- name: Generate zone leaf certificate
+  ansible.builtin.include_tasks: generate_leaf.yml
+  vars:
+    __leaf_dir: "{{ cloudflare_aop_zone_cert_dir }}"
+    __leaf_cn: "{{ cloudflare_aop_leaf_common_name }}"
+  when: _aop_do_zone | default(true) | bool

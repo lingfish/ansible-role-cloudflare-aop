@@ -12,6 +12,21 @@
     cloudflare_aop_cleanup_old: false
 
   tasks:
-    - name: Run cloudflare_aop role
+    - name: Run cloudflare_aop role (zone-level)
       ansible.builtin.include_role:
         name: lingfish.cloudflare_aop
+
+    - name: Run cloudflare_aop role with per-hostname (both modes)
+      ansible.builtin.include_role:
+        name: lingfish.cloudflare_aop
+      vars:
+        cloudflare_aop_zone_id: "test_zone_id_12345"
+        cloudflare_aop_api_token: "test_token_abcde"
+        cloudflare_aop_hostnames:
+          - app.example.com
+          - api.example.com
+        cloudflare_aop_hostname_mode: both
+        cloudflare_aop_generate_cert: true
+        cloudflare_aop_upload_cert: false
+        cloudflare_aop_enable: false
+        cloudflare_aop_cleanup_old: false
