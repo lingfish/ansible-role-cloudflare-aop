@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-27
+
 ### Added
 
 - Per-hostname Authenticated Origin Pulls with `cloudflare_aop_hostnames` list and `cloudflare_aop_hostname_mode` (auto/zone/hostname/both); shared CA, nested cert dirs `<zone>/<hostname>/leaf.pem`, batch `PUT /hostnames` enablement, and per-hostname cleanup via new tasks `generate_leaf.yml`, `generate_hostname_certs.yml`, `upload_hostname_certs.yml`/`_upload_hostname_single.yml`, `enable_hostname.yml`, `cleanup_hostname.yml`
@@ -15,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `README.md` documents per-hostname usage, layout, and limits; `vars/main.yml` adds hostname endpoints
+
+### Fixed
+
+- Per-hostname enablement now retries until `status` is `active`/`pending_deployment` (handles eventual consistency after `202` `PUT`); `GET /hostnames` returns `status` not `cert_status` (`tasks/enable_hostname.yml:53`)
+- Molecule verify no longer asserts non-persistent `cloudflare_aop` facts
 
 ## [1.1.2] - 2026-08-26
 
