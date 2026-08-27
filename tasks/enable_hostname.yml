@@ -33,6 +33,7 @@
       config: "{{ _hostname_put_config }}"
     status_code: [200, 202]
   register: _hostname_enable_result
+  failed_when: not _hostname_enable_result.json.success | default(false) | bool
   notify: "cloudflare_aop cloudflare changed"
 
 - name: Verify hostname AOP is enabled
@@ -45,14 +46,20 @@
     status_code: [200, 202]
   register: _hostname_verify
   changed_when: false
+  retries: 12
+  delay: 10
+  until: _aop_hostnames | difference(_hostname_verify.json.result | map(attribute='hostname') | list) | length == 0
 
 - name: Fail if per-hostname enablement verification failed
   ansible.builtin.fail:
     msg: >-
       Failed to enable per-hostname AOP for {{ item }}.
-      Current associations: {{ _hostname_verify.json.result | default([]) }}
+      Expected enabled=true with cert_status active/pending_deployment, got:
+      {{ _hostname_verify.json.result | selectattr('hostname', 'equalto', item) | list }}
+      Full result: {{ _hostname_verify.json.result | default([]) }}
   when: >
     _hostname_verify.json.result | selectattr('hostname', 'equalto', item) | selectattr('enabled', 'equalto', true) | list | length == 0
+    or _hostname_verify.json.result | selectattr('hostname', 'equalto', item) | map(attribute='cert_status') | select('in', ['active', 'pending_deployment']) | list | length == 0
   loop: "{{ _aop_hostnames }}"
   loop_control:
     label: "{{ item }}"
