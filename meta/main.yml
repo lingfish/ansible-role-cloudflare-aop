@@ -14,6 +14,10 @@ galaxy_info:
       versions:
         - jammy
         - noble
+    - name: Debian
+      versions:
+        - bookworm
+        - trixie
     - name: EL
       versions:
         - "9"

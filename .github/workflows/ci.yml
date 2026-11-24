@@ -44,8 +44,12 @@ jobs:
       fail-fast: false
       matrix:
         distro:
+          - ubuntu-jammy
           - ubuntu-noble
+          - debian-bookworm
+          - debian-trixie
           - rocky9
+          - rocky10
     steps:
       - uses: actions/checkout@v4
 
@@ -60,7 +64,7 @@ jobs:
         run: ansible-galaxy collection install community.crypto
 
       - name: Run Molecule
-        run: molecule test
+        run: molecule test --platform-name ${{ matrix.distro }}
 
   publish:
     name: Publish to Galaxy

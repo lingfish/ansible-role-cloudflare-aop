@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `cloudflare_aop_cleanup_replaced` (default `true`): in hostname mode, delete the certificates the role replaced when it re-associated a hostname, once no hostname in the zone uses them (`tasks/cleanup_replaced_hostname.yml`) (#2)
+- Debian 12 (bookworm) and 13 (trixie) in `meta/main.yml`; CI molecule matrix now covers Ubuntu jammy/noble, Debian bookworm/trixie and Rocky 9/10, one platform per job (previously each job ran every platform)
 - Molecule runs `check` on a clean host and a side effect that replaces `ca.pem` with a foreign CA; verify asserts every key matches its certificate and every leaf is signed by the current CA
 
 ### Fixed

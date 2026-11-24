@@ -23,7 +23,7 @@ molecule converge
 
 ## CI Order
 
-Lint → Molecule (ubuntu-noble, rocky9) → Galaxy publish (on release only)
+Lint → Molecule (ubuntu-jammy, ubuntu-noble, debian-bookworm, debian-trixie, rocky9, rocky10; one platform per matrix job) → Galaxy publish (on release only)
 
 ## Key Files
 
