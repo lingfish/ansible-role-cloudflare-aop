@@ -15,6 +15,7 @@
       enabled: true
     status_code: [200, 202]
   register: _enable_result
+  changed_when: true
   notify: "cloudflare_aop cloudflare changed"
 
 - name: Verify AOP is enabled
@@ -33,8 +34,11 @@
     msg: >-
       Failed to enable zone-level AOP.
       Expected enabled=true, got enabled={{ _verify_settings.json.result.enabled }}.
-  when: not _verify_settings.json.result.enabled | bool
+  when:
+    - not ansible_check_mode
+    - not _verify_settings.json.result.enabled | bool
 
 - name: AOP enabled successfully
   ansible.builtin.debug:
     msg: "Zone-level Authenticated Origin Pulls is now enabled."
+  when: not ansible_check_mode

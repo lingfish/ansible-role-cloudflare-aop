@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `cloudflare_aop_cleanup_replaced` (default `true`): in hostname mode, delete the certificates the role replaced when it re-associated a hostname, once no hostname in the zone uses them (`tasks/cleanup_replaced_hostname.yml`) (#2)
+- Molecule runs `check` on a clean host and a side effect that replaces `ca.pem` with a foreign CA; verify asserts every key matches its certificate and every leaf is signed by the current CA
+
+### Fixed
+
+- A CA certificate without its key (or with a key that doesn't match) no longer fails with "The CA private key does not belong to the CA certificate"; the CA is re-issued and the leaves re-signed. Leaves are also re-issued when their key is missing or mismatched, or when they weren't signed by the current CA (#2)
+- Loop variable `aop_hostname` clash warning in `tasks/generate_hostname_certs.yml`; leaf generation now uses `__leaf_hostname` (#2)
+- Check mode: Cloudflare API reads run with `check_mode: false`, so the zone directory matches a real run, and steps whose input files would only be created in a real run are skipped instead of failing (#2)
+- Existing certificates on Cloudflare were looked up by the subject `serialNumber` attribute, which is never set, so every run re-uploaded and, on "already exists", took the first certificate in the list. They are now matched by PEM or serial number, and an unexpected `400` fails the run
+- API writes (upload, enable, delete) now report `changed`, so the `cloudflare_aop cloudflare changed` handler fires; per-hostname associations are only updated when they differ
+
 ## [1.2.1] - 2026-08-27
 
 ### Fixed

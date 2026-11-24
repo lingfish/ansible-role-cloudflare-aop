@@ -38,7 +38,9 @@ Lint → Molecule (ubuntu-noble, rocky9) → Galaxy publish (on release only)
 
 - **Shared CA** at `<cert_dir>/ca.pem` (all zones share one CA)
 - **Per-zone leaf certs** at `<cert_dir>/<zone_id>/leaf.pem`
-- Cloudflare API returns mixed status codes: 200, 201, 202 for success; 400/1406 for cert already exists
+- Cloudflare API returns mixed status codes: 200, 201, 202 for success. Existing certs are matched by PEM/serial before uploading, so 400/1406 (already exists) is treated as an error
+- CA and leaves are re-issued when their key is missing or mismatched; leaves also when the CA was re-issued or didn't sign them
+- Check mode: API GETs use `check_mode: false`; tasks needing files an earlier step would create are gated on `ansible_check_mode`
 - Uses `community.crypto` for cert generation, `ansible.builtin.uri` for API calls
 
 ## Conventions

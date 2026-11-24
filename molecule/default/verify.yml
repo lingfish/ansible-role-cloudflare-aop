@@ -1,10 +1,12 @@
 ---
 - name: Verify
   hosts: all
+  vars:
+    aop_cert_dir: /etc/cloudflare/aop
   tasks:
     - name: Check CA certificate exists
       ansible.builtin.stat:
-        path: /etc/cloudflare/aop/ca.pem
+        path: "{{ aop_cert_dir }}/ca.pem"
       register: ca_cert
 
     - name: Assert CA certificate exists
@@ -16,7 +18,7 @@
 
     - name: Check leaf certificate exists
       ansible.builtin.stat:
-        path: /etc/cloudflare/aop/test_zone_id_12345/leaf.pem
+        path: "{{ aop_cert_dir }}/test_zone_id_12345/leaf.pem"
       register: leaf_cert
 
     - name: Assert leaf certificate exists
@@ -28,7 +30,7 @@
 
     - name: Check leaf private key exists
       ansible.builtin.stat:
-        path: /etc/cloudflare/aop/test_zone_id_12345/leaf.key
+        path: "{{ aop_cert_dir }}/test_zone_id_12345/leaf.key"
       register: leaf_key
 
     - name: Assert leaf private key exists
@@ -40,7 +42,7 @@
 
     - name: Verify CA certificate properties
       community.crypto.x509_certificate_info:
-        path: /etc/cloudflare/aop/ca.pem
+        path: "{{ aop_cert_dir }}/ca.pem"
       register: ca_info
 
     - name: Assert CA certificate is self-signed
@@ -52,7 +54,7 @@
 
     - name: Verify leaf certificate properties
       community.crypto.x509_certificate_info:
-        path: /etc/cloudflare/aop/test_zone_id_12345/leaf.pem
+        path: "{{ aop_cert_dir }}/test_zone_id_12345/leaf.pem"
       register: leaf_info
 
     - name: Assert leaf certificate properties
@@ -63,7 +65,7 @@
 
     - name: Check per-hostname leaf certificates exist
       ansible.builtin.stat:
-        path: "/etc/cloudflare/aop/test_zone_id_12345/{{ item }}/leaf.pem"
+        path: "{{ aop_cert_dir }}/test_zone_id_12345/{{ item }}/leaf.pem"
       register: hostname_leaves
       loop:
         - app.example.com
@@ -81,7 +83,7 @@
 
     - name: Verify per-hostname leaf CN via loop
       community.crypto.x509_certificate_info:
-        path: "/etc/cloudflare/aop/test_zone_id_12345/app.example.com/leaf.pem"
+        path: "{{ aop_cert_dir }}/test_zone_id_12345/app.example.com/leaf.pem"
       register: app_leaf
 
     - name: Assert app hostname leaf CN
@@ -92,7 +94,7 @@
 
     - name: Verify api hostname leaf CN
       community.crypto.x509_certificate_info:
-        path: "/etc/cloudflare/aop/test_zone_id_12345/api.example.com/leaf.pem"
+        path: "{{ aop_cert_dir }}/test_zone_id_12345/api.example.com/leaf.pem"
       register: api_leaf
 
     - name: Assert api hostname leaf CN
@@ -100,6 +102,39 @@
         that:
           - api_leaf.subject.commonName == "api.example.com"
         fail_msg: "api.example.com leaf CN mismatch"
+
+    - name: Read CA private key info
+      community.crypto.openssl_privatekey_info:
+        path: "{{ aop_cert_dir }}/ca.key"
+      register: ca_key_info
+
+    - name: Assert CA key belongs to CA certificate (side effect replaced ca.pem)
+      ansible.builtin.assert:
+        that:
+          - ca_key_info.public_key == ca_info.public_key
+        fail_msg: ca.key does not match ca.pem
+
+    - name: Read leaf certificates and keys
+      community.crypto.x509_certificate_info:
+        path: "{{ aop_cert_dir }}/test_zone_id_12345/{{ item }}leaf.pem"
+      register: leaf_infos
+      loop: ["", "app.example.com/", "api.example.com/"]
+
+    - name: Read leaf private keys
+      community.crypto.openssl_privatekey_info:
+        path: "{{ aop_cert_dir }}/test_zone_id_12345/{{ item }}leaf.key"
+      register: leaf_key_infos
+      loop: ["", "app.example.com/", "api.example.com/"]
+
+    - name: Assert every leaf matches its key and was signed by the current CA
+      ansible.builtin.assert:
+        that:
+          - item.0.public_key == item.1.public_key
+          - item.0.authority_key_identifier == ca_info.subject_key_identifier
+        fail_msg: "Leaf {{ item.0.item }}leaf.pem does not match its key or the current CA"
+      loop: "{{ leaf_infos.results | zip(leaf_key_infos.results) | list }}"
+      loop_control:
+        label: "{{ item.0.item }}leaf.pem"
 
     - name: Note why API enable not covered in molecule
       ansible.builtin.debug:

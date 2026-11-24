@@ -9,8 +9,17 @@
 # Supports automatic renewal: if a cert exists but is within
 # cloudflare_aop_renew_days of expiry (or already expired),
 # it will be regenerated and re-uploaded.
+#
+# The CA is also re-issued when ca.key is missing or does not belong to
+# ca.pem (e.g. a CA certificate copied over from another host), so an
+# inconsistent set repairs itself instead of failing at leaf signing.
 
 # ── Check existing state for CA ─────────────────────────────────────
+
+- name: Check if cert directory already exists
+  ansible.builtin.stat:
+    path: "{{ cloudflare_aop_cert_dir }}"
+  register: _ca_dir
 
 - name: Check if CA certificate already exists
   ansible.builtin.stat:
@@ -37,15 +46,27 @@
   register: _ca_check
   when: _ca_cert.stat.exists
 
+- name: Read CA private key info
+  community.crypto.openssl_privatekey_info:
+    path: "{{ cloudflare_aop_ca_key_path }}"
+  register: _ca_key_info
+  when:
+    - _ca_cert.stat.exists
+    - _ca_key.stat.exists
+
 # ── Determine renewal need ───────────────────────────────────────────
 
 - name: Set CA renewal fact
   ansible.builtin.set_fact:
     _ca_needs_renew: >-
       {{ (not _ca_cert.stat.exists)
-         or (_ca_cert.stat.exists and not _ca_check.valid_at.renew_threshold) }}
+         or (not _ca_check.valid_at.renew_threshold)
+         or (not _ca_key.stat.exists)
+         or (_ca_key_info.public_key != _ca_check.public_key) }}
 
 # ── CA key ───────────────────────────────────────────────────────────
+# In check mode, steps whose input files would only be created by an
+# earlier step are skipped.
 
 - name: Generate CA private key (RSA)
   community.crypto.openssl_privatekey:
@@ -57,6 +78,7 @@
   when:
     - not _ca_key.stat.exists or (_ca_needs_renew | bool and _ca_key.stat.exists)
     - cloudflare_aop_key_type == "rsa"
+    - not ansible_check_mode or _ca_dir.stat.exists
 
 - name: Generate CA private key (ECC)
   community.crypto.openssl_privatekey:
@@ -68,6 +90,7 @@
   when:
     - not _ca_key.stat.exists or (_ca_needs_renew | bool and _ca_key.stat.exists)
     - cloudflare_aop_key_type == "ecc"
+    - not ansible_check_mode or _ca_dir.stat.exists
 
 # ── CA cert ──────────────────────────────────────────────────────────
 
@@ -87,20 +110,19 @@
     mode: "0644"
   when:
     - not _ca_csr_file.stat.exists or (_ca_needs_renew | bool and _ca_csr_file.stat.exists)
-
-- name: Read CA CSR content
-  ansible.builtin.slurp:
-    src: "{{ cloudflare_aop_ca_csr_path }}"
-  register: _ca_csr_content
+    - not ansible_check_mode or _ca_key.stat.exists
 
 - name: Self-sign CA certificate
   community.crypto.x509_certificate:
     path: "{{ cloudflare_aop_ca_cert_path }}"
-    csr_content: "{{ _ca_csr_content.content | b64decode }}"
+    csr_path: "{{ cloudflare_aop_ca_csr_path }}"
     privatekey_path: "{{ cloudflare_aop_ca_key_path }}"
     provider: selfsigned
     selfsigned_not_after: "+{{ cloudflare_aop_ca_validity }}d"
-  when: _ca_needs_renew | bool
+    force: true
+  when:
+    - _ca_needs_renew | bool
+    - not ansible_check_mode or (_ca_key.stat.exists and _ca_csr_file.stat.exists)
   notify: "cloudflare_aop ca changed"
 
 # ── Zone leaf (delegated to generate_leaf.yml) ─────────────────────

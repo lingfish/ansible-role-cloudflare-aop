@@ -21,5 +21,23 @@ provisioner:
   config_options:
     defaults:
       callbacks_enabled: ansible.posix.profile_tasks
+  playbooks:
+    side_effect: side_effect.yml
 verifier:
   name: ansible
+scenario:
+  # Default sequence plus `check` (first-run --check on a clean host)
+  test_sequence:
+    - dependency
+    - cleanup
+    - destroy
+    - syntax
+    - create
+    - prepare
+    - check
+    - converge
+    - idempotence
+    - side_effect
+    - verify
+    - cleanup
+    - destroy

@@ -17,10 +17,9 @@
 - name: Generate leaf certificate per hostname
   ansible.builtin.include_tasks: generate_leaf.yml
   vars:
-    __leaf_dir: "{{ cloudflare_aop_zone_cert_dir }}/{{ aop_hostname }}"
-    __leaf_cn: "{{ aop_hostname }}"
-    aop_hostname: "{{ aop_hostname }}"
+    __leaf_dir: "{{ cloudflare_aop_zone_cert_dir }}/{{ __leaf_hostname }}"
+    __leaf_cn: "{{ __leaf_hostname }}"
   loop: "{{ _aop_hostnames }}"
   loop_control:
-    loop_var: aop_hostname
-    label: "{{ aop_hostname }}"
+    loop_var: __leaf_hostname
+    label: "{{ __leaf_hostname }}"

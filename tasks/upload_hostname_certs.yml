@@ -11,6 +11,7 @@
     status_code: [200, 202]
   register: _hostname_cert_list
   changed_when: false
+  check_mode: false
 
 - name: Upload certificates for each hostname
   ansible.builtin.include_tasks: _upload_hostname_single.yml

@@ -1,16 +1,29 @@
 ---
 # tasks/_upload_hostname_single.yml - Upload a single hostname certificate
 # Expects: aop_hostname
+#
+# In check mode a leaf that would be re-issued has no entry in
+# _hostname_certs, so the upload is skipped.
 
 - name: Read leaf certificate serial for hostname
   community.crypto.x509_certificate_info:
     content: "{{ _hostname_certs[aop_hostname].cert_pem }}"
   register: _hostname_leaf_info
+  when: (_hostname_certs | default({}))[aop_hostname] is defined
 
-- name: Find existing hostname certificate with matching serial
+# Match on the certificate PEM (whitespace-insensitive), or the serial number
+- name: Find existing hostname certificate matching the leaf
+  vars:
+    __certs: "{{ _hostname_cert_list.json.result | default([]) }}"
+    __pems: "{{ __certs | map(attribute='certificate', default='') | map('regex_replace', '\\s+', '') | list }}"
+    __serials: "{{ __certs | map(attribute='serial_number', default='') | map('string') | list }}"
+    __pem: "{{ _hostname_certs[aop_hostname].cert_pem | regex_replace('\\s+', '') }}"
+    __serial: "{{ _hostname_leaf_info.serial_number | string }}"
   ansible.builtin.set_fact:
     _hostname_existing: >-
-      {{ _hostname_cert_list.json.result | default([]) | selectattr('serial_number', 'equalto', _hostname_leaf_info.subject.serialNumber | default('')) | first | default({}) }}
+      {{ __certs[__pems.index(__pem)] if __pem in __pems
+         else (__certs[__serials.index(__serial)] if __serial in __serials else {}) }}
+  when: (_hostname_certs | default({}))[aop_hostname] is defined
 
 - name: Upload hostname certificate to Cloudflare
   ansible.builtin.uri:
@@ -23,10 +36,11 @@
     body:
       certificate: "{{ _hostname_certs[aop_hostname].cert_pem }}"
       private_key: "{{ _hostname_certs[aop_hostname].key_pem }}"
-    status_code: [200, 201, 202, 400]
+    status_code: [200, 201, 202]
   register: _hostname_upload_single
+  changed_when: true
   when:
-    - _hostname_certs[aop_hostname] is defined
+    - (_hostname_certs | default({}))[aop_hostname] is defined
     - _hostname_existing.id is not defined
   notify: "cloudflare_aop cloudflare changed"
 
@@ -36,40 +50,11 @@
       json:
         result:
           id: "{{ _hostname_existing.id }}"
-          status: "active"
+          status: "{{ _hostname_existing.status | default('active') }}"
       success: true
   when:
-    - _hostname_existing is defined
+    - (_hostname_certs | default({}))[aop_hostname] is defined
     - _hostname_existing.id is defined
-
-- name: Fail if hostname upload failed with unexpected error
-  ansible.builtin.fail:
-    msg: >-
-      Hostname certificate upload failed for {{ aop_hostname }}.
-      API response: {{ _hostname_upload_single.json.errors | default('unknown error') }}
-  when:
-    - _hostname_upload_single is defined
-    - _hostname_upload_single.status | default(200) == 400
-    - _hostname_upload_single.json.errors | default([]) | selectattr('code', 'equalto', 1406) | list | length == 0
-
-- name: Handle hostname already exists error
-  when:
-    - _hostname_upload_single is defined
-    - _hostname_upload_single.status | default(200) == 400
-    - _hostname_upload_single.json.errors | default([]) | selectattr('code', 'equalto', 1406) | list | length > 0
-  block:
-    - name: Find existing hostname cert after already-exists error
-      ansible.builtin.set_fact:
-        _hostname_existing_id: "{{ (_hostname_cert_list.json.result | first).id | default('') }}"
-
-    - name: Set hostname upload result from existing cert
-      ansible.builtin.set_fact:
-        _hostname_upload_single:
-          json:
-            result:
-              id: "{{ _hostname_existing_id }}"
-              status: "active"
-          success: true
 
 - name: Wait for hostname certificate to become active
   ansible.builtin.uri:

@@ -1,5 +1,10 @@
 ---
 # tasks/enable_hostname.yml - Enable per-hostname Authenticated Origin Pulls
+#
+# Associates each hostname with its uploaded certificate. The PUT is only
+# sent when an association is missing, disabled, or points at another
+# certificate. Certificates that this replaces are recorded in
+# _hostname_replaced_ids for cleanup_replaced_hostname.yml.
 
 - name: Get current hostname associations
   ansible.builtin.uri:
@@ -11,12 +16,29 @@
     status_code: [200, 202]
   register: _hostname_current
   changed_when: false
+  check_mode: false
 
-# Build proper config: list of {hostname, cert_id, enabled}
-- name: Set hostname config payload
+- name: Reset hostname association facts
   ansible.builtin.set_fact:
-    _hostname_put_config: >-
-      {{ _hostname_put_config | default([]) + [{'hostname': item, 'cert_id': _hostname_upload_results[item].json.result.id, 'enabled': true}] }}
+    _hostname_put_config: []
+    _hostname_pending: []
+    _hostname_replaced_ids: []
+
+# Build proper config: list of {hostname, cert_id, enabled}.
+# cert_id is empty in check mode when the certificate would be uploaded.
+- name: Set hostname config payload
+  vars:
+    __cert_id: "{{ _hostname_upload_results[item].json.result.id | default('') }}"
+    __current: "{{ _hostname_current.json.result | default([]) | selectattr('hostname', 'equalto', item) | first | default({}) }}"
+    __current_id: "{{ __current.cert_id | default('') }}"
+  ansible.builtin.set_fact:
+    _hostname_put_config: "{{ _hostname_put_config + [{'hostname': item, 'cert_id': __cert_id, 'enabled': true}] }}"
+    _hostname_pending: >-
+      {{ _hostname_pending
+         + ([] if (__cert_id | length > 0 and __current_id == __cert_id and __current.enabled | default(false) | bool) else [item]) }}
+    _hostname_replaced_ids: >-
+      {{ _hostname_replaced_ids
+         + ([__current_id] if (__current_id | length > 0 and __cert_id | length > 0 and __current_id != __cert_id) else []) }}
   loop: "{{ _aop_hostnames }}"
   loop_control:
     label: "{{ item }}"
@@ -33,7 +55,9 @@
       config: "{{ _hostname_put_config }}"
     status_code: [200, 202]
   register: _hostname_enable_result
+  changed_when: true
   failed_when: not _hostname_enable_result.json.success | default(false) | bool
+  when: _hostname_pending | length > 0
   notify: "cloudflare_aop cloudflare changed"
 
 - name: Verify hostname AOP is enabled
@@ -49,6 +73,7 @@
   retries: 12
   delay: 10
   until: _aop_hostnames | difference(_hostname_verify.json.result | map(attribute='hostname') | list) | length == 0
+  when: not ansible_check_mode
 
 - name: Fail if per-hostname enablement verification failed
   ansible.builtin.fail:
@@ -58,8 +83,9 @@
       {{ _hostname_verify.json.result | selectattr('hostname', 'equalto', item) | list }}
       Full result: {{ _hostname_verify.json.result | default([]) }}
   when: >
+    not ansible_check_mode and (
     _hostname_verify.json.result | selectattr('hostname', 'equalto', item) | selectattr('enabled', 'equalto', true) | list | length == 0
-    or _hostname_verify.json.result | selectattr('hostname', 'equalto', item) | map(attribute='status', default='') | select('in', ['active', 'pending_deployment']) | list | length == 0
+    or _hostname_verify.json.result | selectattr('hostname', 'equalto', item) | map(attribute='status', default='') | select('in', ['active', 'pending_deployment']) | list | length == 0)
   loop: "{{ _aop_hostnames }}"
   loop_control:
     label: "{{ item }}"
@@ -67,3 +93,4 @@
 - name: Per-hostname AOP enabled successfully
   ansible.builtin.debug:
     msg: "Per-hostname Authenticated Origin Pulls enabled for {{ _aop_hostnames | join(', ') }}"
+  when: not ansible_check_mode

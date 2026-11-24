@@ -82,6 +82,11 @@ cloudflare_aop_enable: true
 # WARNING: Only enable this after confirming the new cert works on your origin
 cloudflare_aop_cleanup_old: false
 
+# Per-hostname: delete certificates this role replaced when it re-associated a
+# hostname (e.g. after moving the hostname to another origin), once no hostname
+# in the zone uses them. Certificates the role did not replace are left alone.
+cloudflare_aop_cleanup_replaced: true
+
 # =============================================================================
 # Origin server configuration (informational, not managed by this role)
 # =============================================================================

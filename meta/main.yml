@@ -95,6 +95,10 @@ argument_specs:
         description: Delete old certificates after successful upload
         type: bool
         default: false
+      cloudflare_aop_cleanup_replaced:
+        description: Delete per-hostname certificates replaced by this role once no hostname uses them
+        type: bool
+        default: true
       cloudflare_aop_hostnames:
         description: List of FQDNs for per-hostname AOP
         type: list

@@ -8,7 +8,7 @@
 # 4. Generate CA + leaf certificates (zone and/or hostname)
 # 5. Upload leaf certificates to Cloudflare
 # 6. Enable AOP (zone and/or hostname)
-# 7. Clean up old certificates (optional)
+# 7. Clean up replaced hostname certificates, and old certificates (optional)
 # 8. Read CA cert info + set return facts
 
 - name: Validate required variables
@@ -97,6 +97,7 @@
     status_code: [200]
   register: _zone_info
   changed_when: false
+  check_mode: false
   failed_when: false
   when: cloudflare_aop_zone_name | default('') | length == 0
   tags:
@@ -132,6 +133,7 @@
     status_code: [200, 202]
   register: _aop_settings
   changed_when: false
+  check_mode: false
   when:
     - _aop_do_zone | bool
     - cloudflare_aop_upload_cert | bool or cloudflare_aop_enable | bool
@@ -148,6 +150,7 @@
     status_code: [200, 202]
   register: _hostname_settings
   changed_when: false
+  check_mode: false
   when:
     - _aop_do_hostname | bool
     - cloudflare_aop_upload_cert | bool or cloudflare_aop_enable | bool
@@ -265,10 +268,22 @@
     - cloudflare_aop
     - cloudflare_aop_enable
 
+- name: Clean up replaced per-hostname certificates
+  ansible.builtin.include_tasks: cleanup_replaced_hostname.yml
+  when:
+    - cloudflare_aop_cleanup_replaced | bool
+    - cloudflare_aop_enable | bool
+    - _aop_do_hostname | bool
+    - not ansible_check_mode
+  tags:
+    - cloudflare_aop
+    - cloudflare_aop_cleanup
+
 - name: Clean up old zone certificates
   ansible.builtin.include_tasks: cleanup.yml
   when:
     - cloudflare_aop_cleanup_old | bool
+    - not ansible_check_mode
     - _aop_do_zone | bool
     - _upload_result is defined
     - _upload_result.json is defined
@@ -280,6 +295,7 @@
   ansible.builtin.include_tasks: cleanup_hostname.yml
   when:
     - cloudflare_aop_cleanup_old | bool
+    - not ansible_check_mode
     - _aop_do_hostname | bool
     - _hostname_upload_results is defined
   tags:

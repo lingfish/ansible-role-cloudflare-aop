@@ -50,6 +50,7 @@ Your origin server configuration (nginx, Apache, etc.) is **not** managed by thi
 | `cloudflare_aop_upload_cert` | `true` | Upload leaf certificate(s) to Cloudflare |
 | `cloudflare_aop_enable` | `true` | Enable AOP (zone and/or per-hostname) |
 | `cloudflare_aop_cleanup_old` | `false` | Delete old certificates after upload |
+| `cloudflare_aop_cleanup_replaced` | `true` | Per-hostname: delete certificates the role replaced when it re-associated a hostname, once no hostname in the zone uses them |
 | `cloudflare_aop_hostnames` | `[]` | List of FQDNs for per-hostname AOP (e.g., `["app.example.com"]`). When non-empty the role creates nested leaf certs at `<cert_dir>/<zone>/<hostname>/leaf.pem`. Zone and per-hostname are independent and can be enabled together |
 | `cloudflare_aop_hostname` | `""` | Deprecated singular alias for `cloudflare_aop_hostnames` (merged automatically) |
 | `cloudflare_aop_hostname_mode` | `auto` | `auto` / `zone` / `hostname` / `both`. `auto` = hostname list non-empty → both, else zone only |
@@ -138,6 +139,8 @@ Nested leaf layout (shared CA):
 ```
 
 To run per-hostname only (skip zone-level), set `cloudflare_aop_hostname_mode: hostname`. To force both explicitly: `both`.
+
+When a hostname is already associated with another certificate (for example after moving it to a different origin), the role re-associates it and deletes the certificate it replaced, provided no other hostname in the zone still uses it. Set `cloudflare_aop_cleanup_replaced: false` to keep replaced certificates. If a delete fails the role prints a warning and carries on.
 
 > Cloudflare limits: 10 hostname certificates per zone, 100 hostnames per certificate. This role creates one leaf per hostname (isolated rotation). Reuse of a single cert for many hostnames is not yet implemented.
 ```
@@ -402,6 +405,17 @@ See [Handlers: running operations on change](https://docs.ansible.com/projects/a
 The role checks certificate expiry on every run. If a certificate exists but is within `cloudflare_aop_renew_days` of expiry (default: 30), it is regenerated and re-uploaded automatically.
 
 Set `cloudflare_aop_renew_days: 0` to disable automatic renewal — the role will only generate certs if they are missing.
+
+Certificates are also re-issued when the files on disk don't form a matching set:
+
+- If `ca.key` is missing or does not belong to `ca.pem` (for example a CA certificate copied over from another host), the CA is re-issued with a new key, and every leaf is re-signed by it. Re-install the new `ca.pem` on your origins.
+- If a leaf key is missing or does not belong to its certificate, or the leaf was not signed by the current CA, that leaf is re-issued.
+
+Uploads are skipped when the same certificate is already on Cloudflare, so a run with nothing to do reports `changed=0`.
+
+### Check Mode
+
+`--check` is supported. Cloudflare API reads still run (so the zone name and certificate directories match a real run); API writes are skipped. On a first run, steps that need files an earlier step would create (signing, reading certificates for upload) are skipped rather than failing.
 
 ### Cron Example
 
