@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-25
+
 ### Added
 
 - `cloudflare_aop_cleanup_replaced` (default `true`): in hostname mode, delete the certificates the role replaced when it re-associated a hostname, once no hostname in the zone uses them (`tasks/cleanup_replaced_hostname.yml`) (#2)

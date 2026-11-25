@@ -488,7 +488,7 @@ Or pin a version in `requirements.yml`:
 ```yaml
 roles:
   - name: lingfish.cloudflare_aop
-    version: "1.2.0"
+    version: "1.3.0"
 ```
 
 Token: create at https://galaxy.ansible.com/ui/token → repo secret `GALAXY_API_KEY`. Re-running `role import` on the same tag is safe; deleting a git tag removes that Galaxy version.
